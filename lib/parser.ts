@@ -26,7 +26,7 @@ const findNames = (l: string, actors: Actor[], skip: number) =>
 
 export function parseScript(raw: string, cast: CastMember[]): Scene {
   const text = raw.replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
-  const actors: Actor[] = cast.map(m => ({ def: m.def, x: m.x, depth: m.depth, actions: [] }));
+  const actors: Actor[] = cast.map(m => ({ def: m.def, x: m.x, depth: m.depth, actions: [], keys: m.keys ?? [] }));
   const px = actors.map(a => a.x);
   const cam: CamKey[] = [{ t: 0, x: W / 2, y: H / 2, zoom: 1 }];
   let beatEnd = 0, prevStart = 0, maxT = 0;
@@ -142,6 +142,7 @@ export function parseScript(raw: string, cast: CastMember[]): Scene {
     if (!isCam) beatEnd = Math.max(beatEnd, tl);
   }
 
+  for (const a of actors) for (const k of a.keys) maxT = Math.max(maxT, k.t1);
   cam.sort((a, b) => a.t - b.t);
   return { duration: Math.max(maxT, beatEnd) + 0.6, actors, cam };
 }
