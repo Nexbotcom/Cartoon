@@ -1,18 +1,20 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Builder from "@/components/Builder";
-import { H, W, renderFrame } from "@/lib/engine";
+import PosePanel from "@/components/PosePanel";
+import Timeline from "@/components/Timeline";
+import { H, THEME_LIST, W, renderFrame } from "@/lib/engine";
 import { listChars } from "@/lib/library";
 import { parseScript } from "@/lib/parser";
 import { PRESETS } from "@/lib/presets";
-import { CastMember, CharacterDef } from "@/lib/types";
+import { CastMember, CharacterDef, Pose, PoseBlock, ThemeId } from "@/lib/types";
 
 const SAMPLE = `Sam: walk to Mina and wave
 Mina: look at Sam, smile, say "Hey Sam! You are late again."
 Sam: say "Sorry! The bus was really slow." while shrugging
 Camera: close-up on Mina`;
 
-type Tab = "script" | "cast" | "look";
+type Tab = "script" | "stage" | "look" | "pose" | "timeline";
 const SLOTS = [380, 900, 640, 200, 1080];
 const panel = "rounded-2xl border border-white/10 bg-white/[0.03] p-3";
 const lbl = "mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400";
@@ -26,6 +28,7 @@ const INITIAL: CastMember[] = [
 export default function Studio() {
   const cv = useRef<HTMLCanvasElement>(null);
   const raf = useRef(0);
+  const timeRef = useRef(0);
   const [cast, setCast] = useState<CastMember[]>(INITIAL);
   const [sel, setSel] = useState(0);
   const [script, setScript] = useState(SAMPLE);
@@ -33,33 +36,50 @@ export default function Studio() {
   const [time, setTime] = useState(0);
   const [recording, setRecording] = useState(false);
   const [bubbles, setBubbles] = useState(true);
+  const [theme, setTheme] = useState<ThemeId>("day");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [lib, setLib] = useState<CharacterDef[]>([]);
+  const [pps, setPps] = useState(70);
+  const [draft, setDraft] = useState<Partial<Pose>>({});
+  const [draftT0, setDraftT0] = useState<number | null>(null);
+  const [draftDur, setDraftDur] = useState(2);
 
-  const scene = useMemo(() => parseScript(script, cast), [script, cast]);
+  const setT = (t: number) => { timeRef.current = t; setTime(t); };
+
+  // live preview: while the Pose tab has an unsaved draft, include it as a temporary block
+  const castLive = useMemo(() => {
+    if (tab !== "pose" || draftT0 === null || !cast[sel] || Object.keys(draft).length === 0) return cast;
+    return cast.map((c, i) =>
+      i === sel ? { ...c, keys: [...(c.keys ?? []), { t0: draftT0, t1: draftT0 + draftDur, pose: draft }] } : c);
+  }, [cast, tab, sel, draft, draftT0, draftDur]);
+
+  const scene = useMemo(() => parseScript(script, castLive), [script, castLive]);
   const ctx = () => cv.current!.getContext("2d")!;
   const stop = () => cancelAnimationFrame(raf.current);
 
   useEffect(() => {
-    stop(); setTime(0);
-    renderFrame(ctx(), scene, 0, { bubbles });
+    stop();
+    const t = Math.min(timeRef.current, scene.duration);
+    setT(t);
+    renderFrame(ctx(), scene, t, { bubbles, theme });
     return stop;
-  }, [scene, bubbles]);
+  }, [scene, bubbles, theme]);
   useEffect(() => { listChars().then(setLib); }, [tab]);
+  useEffect(() => { setDraft({}); setDraftT0(null); }, [sel]);
 
   const play = (onDone?: () => void) => {
     stop();
     const c = ctx(), t0 = performance.now();
     const tick = (now: number) => {
       const t = Math.min((now - t0) / 1000, scene.duration);
-      renderFrame(c, scene, t, { bubbles });
-      setTime(t);
+      renderFrame(c, scene, t, { bubbles, theme });
+      setT(t);
       if (t < scene.duration) raf.current = requestAnimationFrame(tick); else onDone?.();
     };
     raf.current = requestAnimationFrame(tick);
   };
-  const scrub = (t: number) => { stop(); setTime(t); renderFrame(ctx(), scene, t, { bubbles }); };
+  const scrub = (t: number) => { stop(); setT(t); renderFrame(ctx(), scene, t, { bubbles, theme }); };
 
   const exportVideo = () => {
     const mime = ["video/mp4;codecs=avc1", "video/webm;codecs=vp9", "video/webm"].find(m => MediaRecorder.isTypeSupported(m));
@@ -101,10 +121,39 @@ export default function Studio() {
   };
   const addLine = (who: string) => setScript(s => `${s.trimEnd()}\n${who}: `);
 
+  // ---- pose blocks ----
+  const blocks: PoseBlock[] = cast[sel]?.keys ?? [];
+  const resetDraft = () => { setDraft({}); setDraftT0(null); };
+  const draftChange = (k: keyof Pose, v: number) => {
+    if (draftT0 === null) setDraftT0(timeRef.current);
+    setDraft(d => ({ ...d, [k]: v } as Partial<Pose>));
+  };
+  const addBlock = () => {
+    if (draftT0 === null || !cast[sel]) return;
+    patch(sel, { keys: [...blocks, { t0: draftT0, t1: draftT0 + draftDur, pose: draft }] });
+    resetDraft();
+  };
+  const delBlock = (i: number) => patch(sel, { keys: blocks.filter((_, k) => k !== i) });
+  const editBlock = (i: number) => {
+    const b = blocks[i];
+    setDraft(b.pose); setDraftT0(b.t0); setDraftDur(b.t1 - b.t0);
+    delBlock(i);
+  };
+  const patchBlock = (i: number, p: { t0?: number; dur?: number }) =>
+    patch(sel, { keys: blocks.map((b, k) => k === i ? { ...b, t0: p.t0 ?? b.t0, t1: (p.t0 ?? b.t0) + (p.dur ?? b.t1 - b.t0) } : b) });
+
   const tabBtn = (id: Tab, label: string) => (
     <button key={id} onClick={() => setTab(id)}
-      className={`flex-1 rounded-xl px-3 py-2 text-sm font-medium transition ${tab === id ? "text-white" : "text-slate-400 hover:text-slate-200"}`}
+      className={`whitespace-nowrap rounded-xl px-3 py-2 text-sm font-medium transition ${tab === id ? "text-white" : "text-slate-400 hover:text-slate-200"}`}
       style={tab === id ? grad : undefined}>{label}</button>
+  );
+  const actorChips = (
+    <div className="flex flex-wrap gap-2">
+      {cast.map((c, i) => (
+        <button key={i} onClick={() => setSel(i)}
+          className={`rounded-xl border px-3 py-1.5 text-sm ${sel === i ? "border-violet-400 bg-violet-500/20" : "border-white/10 bg-white/5"}`}>{c.def.name}</button>
+      ))}
+    </div>
   );
 
   return (
@@ -116,7 +165,7 @@ export default function Studio() {
 
       <main className="mx-auto grid max-w-6xl gap-4 p-3 lg:grid-cols-[1.4fr_1fr]">
         <section className="sticky top-0 z-20 -mx-3 space-y-2 bg-[#0b0d14]/95 px-3 pb-2 pt-1 backdrop-blur lg:top-3 lg:mx-0 lg:self-start lg:px-0">
-          <div className="overflow-hidden rounded-2xl shadow-2xl ring-1 ring-white/10" style={{ boxShadow: "0 20px 60px rgba(139,92,246,0.18)" }}>
+          <div className="overflow-hidden rounded-2xl ring-1 ring-white/10" style={{ boxShadow: "0 20px 60px rgba(139,92,246,0.18)" }}>
             <canvas ref={cv} width={W} height={H} className="block w-full bg-black" />
           </div>
           <input type="range" min={0} max={scene.duration} step={0.01} value={time}
@@ -137,9 +186,10 @@ export default function Studio() {
           </div>
         </section>
 
-        <section className="space-y-3">
-          <div className="flex gap-1 rounded-2xl border border-white/10 bg-white/[0.03] p-1">
-            {tabBtn("script", "🎬 Script")}{tabBtn("cast", "🎭 Cast")}{tabBtn("look", "🎨 Character")}
+        <section className="min-w-0 space-y-3">
+          <div className="flex gap-1 overflow-x-auto rounded-2xl border border-white/10 bg-white/[0.03] p-1">
+            {tabBtn("script", "🎬 Script")}{tabBtn("stage", "🎭 Stage")}{tabBtn("look", "🎨 Character")}
+            {tabBtn("pose", "🕺 Pose")}{tabBtn("timeline", "⏱ Timeline")}
           </div>
 
           {tab === "script" && (
@@ -149,8 +199,8 @@ export default function Studio() {
                 <textarea value={script} onChange={e => setScript(e.target.value)} rows={9} spellCheck={false}
                   className="w-full rounded-xl border border-white/10 bg-black/30 p-3 font-mono text-sm outline-none focus:border-violet-400" />
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {cast.map(c => (
-                    <button key={c.def.id + c.def.name} onClick={() => addLine(c.def.name)}
+                  {cast.map((c, i) => (
+                    <button key={i} onClick={() => addLine(c.def.name)}
                       className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-xs hover:bg-white/10">+ {c.def.name}</button>
                   ))}
                   <button onClick={() => addLine("Camera")} className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-xs hover:bg-white/10">+ Camera</button>
@@ -171,8 +221,19 @@ export default function Studio() {
             </div>
           )}
 
-          {tab === "cast" && (
+          {tab === "stage" && (
             <div className="space-y-3">
+              <div className={panel}>
+                <p className={lbl}>Background</p>
+                <div className="grid grid-cols-5 gap-2">
+                  {THEME_LIST.map(t => (
+                    <button key={t.id} onClick={() => setTheme(t.id)}
+                      className={`rounded-xl border p-1 text-[11px] ${theme === t.id ? "border-violet-400 bg-violet-500/10" : "border-white/10"}`}>
+                      <div className="mb-1 h-10 rounded-lg" style={{ background: t.swatch }} />{t.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div className={panel}>
                 <p className={lbl}>On stage ({cast.length})</p>
                 <div className="space-y-2">
@@ -215,16 +276,33 @@ export default function Studio() {
           )}
 
           {tab === "look" && (cast[sel]
+            ? (<>{actorChips}<Builder def={cast[sel].def} setDef={d => patch(sel, { def: d })} /></>)
+            : <p className={`${panel} text-sm text-slate-400`}>Add an actor in the Stage tab first.</p>)}
+
+          {tab === "pose" && (cast[sel]
             ? (<>
-                <div className="flex flex-wrap gap-2">
-                  {cast.map((c, i) => (
-                    <button key={i} onClick={() => setSel(i)}
-                      className={`rounded-xl border px-3 py-1.5 text-sm ${sel === i ? "border-violet-400 bg-violet-500/20" : "border-white/10 bg-white/5"}`}>{c.def.name}</button>
-                  ))}
-                </div>
-                <Builder def={cast[sel].def} setDef={d => patch(sel, { def: d })} />
+                {actorChips}
+                <PosePanel name={cast[sel].def.name} draft={draft} start={draftT0} dur={draftDur} blocks={blocks}
+                  onChange={draftChange} onDur={setDraftDur} onAdd={addBlock} onReset={resetDraft}
+                  onDelete={delBlock} onEdit={editBlock} onPatch={patchBlock} />
               </>)
-            : <p className={`${panel} text-sm text-slate-400`}>Add an actor in the Cast tab first.</p>)}
+            : <p className={`${panel} text-sm text-slate-400`}>Add an actor in the Stage tab first.</p>)}
+
+          {tab === "timeline" && (
+            <div className={panel}>
+              <div className="mb-2 flex items-center gap-3">
+                <p className={`${lbl} mb-0`}>Timeline</p>
+                <label className="ml-auto flex items-center gap-2 text-xs text-slate-400">Zoom
+                  <input type="range" min={20} max={160} value={pps} onChange={e => setPps(+e.target.value)} className="w-28 accent-violet-500" />
+                </label>
+              </div>
+              <Timeline scene={scene} time={time} onSeek={scrub} pps={pps} />
+              <p className="mt-2 text-xs text-slate-500">
+                Drag on the timeline to scrub. Blue = walking, pink = talking, amber = gestures and expressions, violet = manual poses, sky = camera.
+                Lower the zoom to fit long scenes.
+              </p>
+            </div>
+          )}
         </section>
       </main>
     </div>
