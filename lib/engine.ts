@@ -1,5 +1,6 @@
 import { Action, Actor, ClipId, Pose, Scene, ThemeId, View } from "./types";
 import { BASE, clips, drawActor } from "./draw";
+import { drawSprite } from "./sprite";
 
 export const W = 1280, H = 720, GROUND = 560, FOOT = 600;
 const sm = (u: number) => u * u * (3 - 2 * u);
@@ -213,7 +214,9 @@ export function renderFrame(c: CanvasRenderingContext2D, s: Scene, t: number, op
     const order = [...s.actors].sort((a, b) => b.depth - a.depth);
     const states = order.map(a => ({ a, st: actorState(s, a, t) }));
     for (const { a, st } of states) {
-      drawActor(c, a.def, st.pose, st.expr, st.x, FOOT - a.depth * 70, 1 - a.depth * 0.22,
+      const fy = FOOT - a.depth * 70, sc = 1 - a.depth * 0.22;
+      if (a.def.sprite) drawSprite(c, a.def, st, t, fy, sc);
+      else drawActor(c, a.def, st.pose, st.expr, st.x, fy, sc,
         { view: st.view, face: st.face, seed: Math.floor(t * 8), prop: st.clip === "type" ? "laptop" : undefined });
     }
     if (opts.bubbles !== false) {
