@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
-import { SpriteKey, SpritePack } from "@/lib/types";
-import { Slice, sliceSheet } from "@/lib/sprite";
+import { MouthParams, RigData, RigParams, SpriteKey, SpritePack } from "@/lib/types";
+import { Slice, autoRig, buildRig, sliceSheet } from "@/lib/sprite";
 
 type Assign = SpriteKey | "skip";
 const OPTIONS: { v: Assign; label: string }[] = [
@@ -20,11 +20,25 @@ const panel = "rounded-2xl border border-white/10 bg-white/[0.03] p-3";
 const lbl = "mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400";
 const grad = { background: "linear-gradient(135deg,#8b5cf6,#ec4899)" };
 
+const HLINES: { k: keyof RigParams; label: string; color: string }[] = [
+  { k: "neckY", label: "Neck (under the chin)", color: "#22d3ee" },
+  { k: "shoulderY", label: "Shoulders", color: "#4ade80" },
+  { k: "elbowY", label: "Elbows", color: "#facc15" },
+  { k: "armEndY", label: "Bottom of the hands", color: "#fb923c" },
+  { k: "hipY", label: "Hips (top of the legs)", color: "#f87171" },
+  { k: "kneeY", label: "Knees", color: "#c084fc" },
+];
+const VLINES: { k: keyof RigParams; label: string; color: string }[] = [
+  { k: "lc", label: "Left arm | torso", color: "#f472b6" },
+  { k: "rc", label: "Torso | right arm", color: "#f472b6" },
+  { k: "cx", label: "Centre between the legs", color: "#e2e8f0" },
+];
+
 export default function ArtImporter({ name, hasArt, onApply, onRemove }: {
   name: string; hasArt: boolean; onApply: (p: SpritePack) => void; onRemove: () => void;
 }) {
   const [img, setImg] = useState<HTMLImageElement | null>(null);
-  const [cols, setCols] = useState(4);
+  const [cols, setCols] = useState(1);
   const [tol, setTol] = useState(40);
   const [removeBg, setRemoveBg] = useState(true);
   const [slices, setSlices] = useState<Slice[]>([]);
@@ -33,6 +47,11 @@ export default function ArtImporter({ name, hasArt, onApply, onRemove }: {
   const [threeqRight, setThreeqRight] = useState(true);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
+
+  const [useRig, setUseRig] = useState(true);
+  const [walkFront, setWalkFront] = useState(true);
+  const [rp, setRp] = useState<RigParams | null>(null);
+  const [mouth, setMouth] = useState<MouthParams>({ x: 0.5, y: 0.12, w: 0.06 });
 
   const onFile = (f?: File) => {
     if (!f) return;
@@ -56,7 +75,16 @@ export default function ArtImporter({ name, hasArt, onApply, onRemove }: {
     return () => clearTimeout(id);
   }, [img, cols, tol, removeBg]);
 
-  const apply = () => {
+  const frontIdx = assign.indexOf("front");
+  const frontUrl = frontIdx >= 0 ? slices[frontIdx]?.url : undefined;
+
+  const detect = () => {
+    if (!frontUrl) return;
+    autoRig(frontUrl).then(r => { setRp(r.rig); setMouth(r.mouth); }).catch(e => setMsg(String(e)));
+  };
+  useEffect(() => { if (useRig && frontUrl) detect(); /* eslint-disable-next-line */ }, [useRig, frontUrl]);
+
+  const apply = async () => {
     const views: Partial<Record<SpriteKey, string>> = {};
     let refH = 0;
     slices.forEach((s, i) => {
@@ -64,11 +92,27 @@ export default function ArtImporter({ name, hasArt, onApply, onRemove }: {
       if (k && k !== "skip" && !views[k]) { views[k] = s.url; refH = Math.max(refH, s.h); }
     });
     if (!views.front) { setMsg("Assign one figure as the Front view first."); return; }
+    let rig: RigData | undefined;
+    if (useRig && rp) {
+      try { setBusy(true); rig = await buildRig(views.front, rp, mouth); }
+      catch (e) { setMsg(String(e)); setBusy(false); return; }
+      setBusy(false);
+    }
     setMsg("");
-    onApply({ views, refH, sideRight, threeqRight });
+    onApply({ views, refH, sideRight, threeqRight, rig, walkFront });
   };
 
   const uses = (k: SpriteKey) => assign.includes(k);
+
+  const slider = (label: string, color: string, value: number, onChange: (v: number) => void) => (
+    <label key={label} className="block text-xs text-slate-300">
+      <span className="flex items-center gap-1.5">
+        <span className="inline-block h-2 w-2 rounded-full" style={{ background: color }} />{label}
+        <span className="ml-auto text-slate-500">{Math.round(value * 100)}%</span>
+      </span>
+      <input type="range" min={0} max={100} value={Math.round(value * 100)} onChange={e => onChange(+e.target.value / 100)} className="w-full accent-violet-500" />
+    </label>
+  );
 
   return (
     <div className="space-y-3">
@@ -81,11 +125,12 @@ export default function ArtImporter({ name, hasArt, onApply, onRemove }: {
           </div>
         )}
         <label className="block cursor-pointer rounded-xl border border-dashed border-white/20 bg-black/20 p-4 text-center text-sm text-slate-300 hover:bg-white/5">
-          📁 Choose a turnaround sheet or character image
+          📁 Choose a character image
           <input type="file" accept="image/*" hidden onChange={e => onFile(e.target.files?.[0])} />
         </label>
         <p className="mt-2 text-xs text-slate-500">
-          Works best with figures standing side by side on a plain light background. Crop out any phone status bars or black borders first.
+          Best: one character, front view, standing, arms slightly away from the body and feet slightly apart, on a plain light background.
+          A sheet with several views also works: raise the slider below.
         </p>
       </div>
 
@@ -143,12 +188,65 @@ export default function ArtImporter({ name, hasArt, onApply, onRemove }: {
               </label>
             )}
           </div>
-          <button onClick={apply} style={grad} className="mt-3 w-full rounded-xl px-4 py-2.5 font-medium text-white">
-            Use this art for {name}
+        </div>
+      )}
+
+      {frontUrl && (
+        <div className={panel}>
+          <label className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-200">
+            <input type="checkbox" checked={useRig} onChange={e => setUseRig(e.target.checked)} className="accent-violet-500" />
+            Make the arms, legs and mouth move (cut-out rig)
+          </label>
+
+          {useRig && rp && (
+            <>
+              <p className="mb-2 text-xs text-slate-500">
+                Drag each slider until its line sits on the joint. Press Auto-detect to guess them again.
+                The red dot is where the mouth opens.
+              </p>
+              <div className="mb-3 flex justify-center rounded-xl bg-[#1b1f2e] p-2">
+                <div className="relative inline-block">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={frontUrl} alt="front" className="block max-h-96 w-auto" />
+                  {HLINES.map(l => (
+                    <div key={l.k} className="absolute left-0 right-0 border-t-2 border-dashed" style={{ top: `${rp[l.k] * 100}%`, borderColor: l.color }} />
+                  ))}
+                  {VLINES.map(l => (
+                    <div key={l.k} className="absolute bottom-0 top-0 border-l-2 border-dashed" style={{ left: `${rp[l.k] * 100}%`, borderColor: l.color }} />
+                  ))}
+                  <div className="absolute rounded-full bg-red-500/90"
+                    style={{ left: `${mouth.x * 100}%`, top: `${mouth.y * 100}%`, width: `${mouth.w * 100}%`, height: 6, transform: "translate(-50%,-50%)" }} />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-2">
+                {HLINES.map(l => slider(l.label, l.color, rp[l.k], v => setRp(r => (r ? ({ ...r, [l.k]: v } as RigParams) : r))))}
+                {VLINES.map(l => slider(l.label, l.color, rp[l.k], v => setRp(r => (r ? ({ ...r, [l.k]: v } as RigParams) : r))))}
+                {slider("Mouth: left / right", "#ef4444", mouth.x, v => setMouth(m => ({ ...m, x: v })))}
+                {slider("Mouth: up / down", "#ef4444", mouth.y, v => setMouth(m => ({ ...m, y: v })))}
+                {slider("Mouth: size", "#ef4444", mouth.w * 4, v => setMouth(m => ({ ...m, w: v / 4 })))}
+              </div>
+
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <button onClick={detect} className="rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-sm hover:bg-white/10">Auto-detect</button>
+                <label className="flex items-center gap-2 text-sm text-slate-300">
+                  <input type="checkbox" checked={walkFront} onChange={e => setWalkFront(e.target.checked)} className="accent-violet-500" />
+                  Walk facing the camera (limbs move)
+                </label>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {slices.length > 0 && (
+        <div className={panel}>
+          <button onClick={apply} disabled={busy} style={grad} className="w-full rounded-xl px-4 py-2.5 font-medium text-white disabled:opacity-50">
+            {busy ? "Working..." : `Use this art for ${name}`}
           </button>
           {msg && <p className="mt-2 text-sm text-red-400">{msg}</p>}
           <p className="mt-2 text-xs text-slate-500">
-            To keep this character, open the Character tab and press Save. Imported art cannot wave arms or open its mouth. It moves as a whole and switches views.
+            To keep this character, open the Character tab and press Save. Without the rig, imported art moves as one piece.
           </p>
         </div>
       )}
