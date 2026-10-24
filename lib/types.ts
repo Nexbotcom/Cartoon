@@ -5,12 +5,32 @@ export type View = "front" | "side" | "back";
 export type ThemeId = "day" | "sunset" | "night" | "park" | "room";
 export type SpriteKey = "front" | "threeq" | "side" | "back";
 
-// Imported art: one transparent PNG per view (data URLs), all cut from the same sheet scale.
+// ---- cut-out rig (limbs that move, built from the front picture) ----
+export type PartKey = "head" | "torso" | "armLU" | "armLL" | "armRU" | "armRL" | "legLU" | "legLL" | "legRU" | "legRL";
+
+// Cut lines as fractions (0..1) of the front picture. y values go top to bottom.
+export interface RigParams {
+  neckY: number; shoulderY: number; elbowY: number; armEndY: number; hipY: number; kneeY: number;
+  lc: number;   // left cut: arm (screen-left) | torso
+  rc: number;   // right cut: torso | arm (screen-right)
+  cx: number;   // centre line between the legs
+}
+export interface MouthParams { x: number; y: number; w: number }   // fractions of the front picture
+export interface RigPart { url: string; ox: number; oy: number; w: number; h: number; jx: number; jy: number }
+export interface RigData {
+  W: number; H: number;
+  parts: Record<PartKey, RigPart>;
+  mouth?: { x: number; y: number; w: number };   // in source pixels
+}
+
+// Imported art: one transparent PNG per view (data URLs).
 export interface SpritePack {
   views: Partial<Record<SpriteKey, string>>;
   refH: number;          // pixel height of the tallest view; maps to def.height
-  sideRight: boolean;    // does the side view face screen-right in the image?
-  threeqRight: boolean;  // does the 3/4 view face screen-right in the image?
+  sideRight: boolean;
+  threeqRight: boolean;
+  rig?: RigData;         // if present, the front picture is animated as cut-out parts
+  walkFront?: boolean;   // walk facing the camera with the rig (default true)
 }
 
 export interface CharacterDef {
@@ -19,9 +39,9 @@ export interface CharacterDef {
   hairStyle: "short" | "spiky" | "bun" | "long" | "none";
   outfit: "pants" | "shorts" | "skirt";
   sleeve: "short" | "long";
-  build: number;   // 0.8 slim to 1.25 broad
+  build: number;
   height: number;
-  sprite?: SpritePack;   // if set, the actor is drawn from imported art
+  sprite?: SpritePack;
 }
 
 export interface Pose {
