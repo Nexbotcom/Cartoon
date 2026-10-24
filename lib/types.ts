@@ -2,6 +2,7 @@ export type StyleId = "stick" | "flat" | "anime" | "sketch";
 export type Expr = "neutral" | "happy" | "sad" | "angry" | "surprised";
 export type ClipId = "idle" | "walk" | "wave" | "talk" | "type" | "jump" | "point" | "shrug";
 export type View = "front" | "side" | "back";
+export type ThemeId = "day" | "sunset" | "night" | "park" | "room";
 
 export interface CharacterDef {
   id: string; name: string; style: StyleId;
@@ -25,7 +26,11 @@ export interface Action {
   clip?: ClipId; expr?: Expr; say?: string; moveTo?: number;
   look?: string; nod?: boolean; shake?: boolean; view?: View;
 }
-export interface Actor { def: CharacterDef; x: number; depth: number; actions: Action[] }
-export interface CastMember { def: CharacterDef; x: number; depth: number }
+
+// A manual pose override: fully applied between t0 and t1, fading in before and out after.
+export interface PoseBlock { t0: number; t1: number; pose: Partial<Pose> }
+
+export interface Actor { def: CharacterDef; x: number; depth: number; actions: Action[]; keys: PoseBlock[] }
+export interface CastMember { def: CharacterDef; x: number; depth: number; keys?: PoseBlock[] }
 export interface CamKey { t: number; x: number; y: number; zoom: number; follow?: number }
 export interface Scene { duration: number; actors: Actor[]; cam: CamKey[] }
