@@ -1,4 +1,4 @@
-import { Action, Actor, ClipId, Pose, Scene, View } from "./types";
+import { Action, Actor, ClipId, Pose, Scene, ThemeId, View } from "./types";
 import { BASE, clips, drawActor } from "./draw";
 
 export const W = 1280, H = 720, GROUND = 560, FOOT = 600;
@@ -74,6 +74,16 @@ export function actorState(s: Scene, a: Actor, t: number) {
   pose.blink = ph < 0.16 ? Math.sin((ph / 0.16) * Math.PI) : 0;
   pose.mouth = say ? Math.abs(Math.sin(t * 11)) * (0.55 + 0.45 * Math.abs(Math.sin(t * 3.1))) : 0;
 
+  // manual pose blocks: full strength inside [t0, t1], 0.25s fade before and after
+  for (const k of a.keys) {
+    const w = sm(cl((t - (k.t0 - 0.25)) / 0.25, 0, 1)) * (1 - sm(cl((t - k.t1) / 0.25, 0, 1)));
+    if (w <= 0) continue;
+    for (const key of Object.keys(k.pose) as (keyof Pose)[]) {
+      const v = k.pose[key];
+      if (v !== undefined) pose[key] = lerp(pose[key], v, w);
+    }
+  }
+
   const view: View = clip === "type" ? "front" : moving || clip === "walk" ? "side" : viewA ?? "front";
   return { x: pos.x, face, view, clip, expr, say, pose };
 }
@@ -89,21 +99,68 @@ export function camAt(s: Scene, t: number) {
   return { x, y: lerp(a.y, b.y, u), zoom: lerp(a.zoom, b.zoom, u) };
 }
 
+// ---------------- backgrounds ----------------
 type Layer = { speed: number; tile: number; draw: (c: CanvasRenderingContext2D, i: number) => void };
-const hills: Layer = { speed: 0.15, tile: 600, draw: (c, i) => {
-  c.fillStyle = "#c9ddd0"; c.beginPath();
-  c.ellipse(i * 600 + 300, GROUND, 380, 90 + rnd(i, 1) * 120, 0, Math.PI, 2 * Math.PI); c.fill(); } };
-const city: Layer = { speed: 0.45, tile: 220, draw: (c, i) => {
+
+const hillsL = (color: string): Layer => ({ speed: 0.15, tile: 600, draw: (c, i) => {
+  c.fillStyle = color; c.beginPath();
+  c.ellipse(i * 600 + 300, GROUND, 380, 90 + rnd(i, 1) * 120, 0, Math.PI, 2 * Math.PI); c.fill(); } });
+
+const cityL = (body: string, win: string, lit = false): Layer => ({ speed: 0.45, tile: 220, draw: (c, i) => {
   const w = 140 + rnd(i, 2) * 60, h = 120 + rnd(i, 3) * 200, x = i * 220 + 40;
-  c.fillStyle = "#b3bfd3"; c.fillRect(x, GROUND - h, w, h);
-  c.fillStyle = "#e6ecf7";
-  for (let r = 0; r < h - 30; r += 36) for (let q = 14; q < w - 20; q += 34) c.fillRect(x + q, GROUND - h + 14 + r, 16, 20); } };
-const ground: Layer = { speed: 1, tile: 200, draw: (c, i) => {
-  c.fillStyle = "#9bc58a"; c.fillRect(i * 200, GROUND, 201, 700);
-  c.fillStyle = "#86b277"; c.fillRect(i * 200 + 20, GROUND + 90, 90, 8); } };
-const fg: Layer = { speed: 1.6, tile: 500, draw: (c, i) => {
-  c.fillStyle = "#4d8a4f"; c.beginPath();
-  c.ellipse(i * 500 + rnd(i, 4) * 300, GROUND + 190, 90, 60, 0, 0, 7); c.fill(); } };
+  c.fillStyle = body; c.fillRect(x, GROUND - h, w, h);
+  for (let r = 0; r < h - 30; r += 36) for (let q = 14; q < w - 20; q += 34) {
+    c.fillStyle = lit && rnd(i * 13 + r, q) > 0.55 ? "#ffd86b" : win;
+    c.fillRect(x + q, GROUND - h + 14 + r, 16, 20);
+  } } });
+
+const treesL = (a: string, b: string): Layer => ({ speed: 0.45, tile: 200, draw: (c, i) => {
+  const x = i * 200 + 100 + rnd(i, 5) * 60, h = 140 + rnd(i, 6) * 120;
+  c.fillStyle = "#6b4a2f"; c.fillRect(x - 8, GROUND - h * 0.45, 16, h * 0.45);
+  c.fillStyle = rnd(i, 7) > 0.5 ? a : b;
+  c.beginPath(); c.arc(x, GROUND - h * 0.6, h * 0.42, 0, 7); c.fill();
+  c.beginPath(); c.arc(x - h * 0.25, GROUND - h * 0.45, h * 0.28, 0, 7); c.fill();
+  c.beginPath(); c.arc(x + h * 0.25, GROUND - h * 0.45, h * 0.28, 0, 7); c.fill(); } });
+
+const roomL: Layer = { speed: 0.6, tile: 420, draw: (c, i) => {
+  const x = i * 420;
+  if (((i % 2) + 2) % 2 === 0) {
+    c.fillStyle = "#fff"; c.fillRect(x + 110, GROUND - 330, 200, 230);
+    c.fillStyle = "#bfe3ff"; c.fillRect(x + 120, GROUND - 320, 85, 210); c.fillRect(x + 215, GROUND - 320, 85, 210);
+  } else {
+    c.fillStyle = "#7a5c3e"; c.fillRect(x + 140, GROUND - 300, 140, 110);
+    c.fillStyle = "#f3d9a8"; c.fillRect(x + 150, GROUND - 290, 120, 90);
+    c.fillStyle = "#c9855a"; c.beginPath(); c.arc(x + 210, GROUND - 245, 26, 0, 7); c.fill();
+  }
+  c.fillStyle = "#cfc2ae"; c.fillRect(x, GROUND - 14, 421, 14); } };
+
+const groundL = (color: string, stripe: string, planks = false): Layer => ({ speed: 1, tile: 200, draw: (c, i) => {
+  c.fillStyle = color; c.fillRect(i * 200, GROUND, 201, 700);
+  c.fillStyle = stripe;
+  if (planks) { c.fillRect(i * 200, GROUND + 80, 201, 3); c.fillRect(i * 200, GROUND + 160, 201, 3); c.fillRect(i * 200 + rnd(i, 9) * 180, GROUND, 3, 80); }
+  else c.fillRect(i * 200 + 20, GROUND + 90, 90, 8); } });
+
+const fgL = (color: string): Layer => ({ speed: 1.6, tile: 500, draw: (c, i) => {
+  c.fillStyle = color; c.beginPath();
+  c.ellipse(i * 500 + rnd(i, 4) * 300, GROUND + 190, 90, 60, 0, 0, 7); c.fill(); } });
+
+interface ThemeDef { sky: string[]; far: Layer | null; mid: Layer; ground: Layer; fg: Layer | null; sun?: { x: number; y: number; r: number; c: string }; stars?: boolean }
+
+const THEMES: Record<ThemeId, ThemeDef> = {
+  day:    { sky: ["#8fd0ff", "#eef8ff"], far: hillsL("#c9ddd0"), mid: cityL("#b3bfd3", "#e6ecf7"), ground: groundL("#9bc58a", "#86b277"), fg: fgL("#4d8a4f"), sun: { x: 1060, y: 110, r: 46, c: "#fff3b0" } },
+  sunset: { sky: ["#2d1f5e", "#d9577a", "#ffb36b"], far: hillsL("#6b3f7a"), mid: cityL("#4a2f66", "#7a5588"), ground: groundL("#5a6b4a", "#4c5c3e"), fg: fgL("#2f3d2f"), sun: { x: 300, y: 400, r: 70, c: "#ffd29a" } },
+  night:  { sky: ["#0b1030", "#1b2a5c"], far: hillsL("#1b2748"), mid: cityL("#202b4d", "#2d3a63", true), ground: groundL("#27413a", "#1f342f"), fg: fgL("#12261f"), sun: { x: 1000, y: 100, r: 38, c: "#f4f1d8" }, stars: true },
+  park:   { sky: ["#9fdcff", "#f4fbff"], far: hillsL("#a8d5a2"), mid: treesL("#4f9a52", "#3f8a49"), ground: groundL("#8fd07a", "#7bbd68"), fg: fgL("#3f8a49"), sun: { x: 180, y: 110, r: 44, c: "#fff3b0" } },
+  room:   { sky: ["#eadfce", "#d9ccb8"], far: null, mid: roomL, ground: groundL("#b98c5e", "#a67a50", true), fg: null },
+};
+
+export const THEME_LIST: { id: ThemeId; label: string; swatch: string }[] = [
+  { id: "day", label: "Sunny", swatch: "linear-gradient(#8fd0ff,#9bc58a)" },
+  { id: "sunset", label: "Sunset", swatch: "linear-gradient(#2d1f5e,#d9577a,#ffb36b)" },
+  { id: "night", label: "Night", swatch: "linear-gradient(#0b1030,#27413a)" },
+  { id: "park", label: "Park", swatch: "linear-gradient(#9fdcff,#8fd07a)" },
+  { id: "room", label: "Room", swatch: "linear-gradient(#eadfce,#b98c5e)" },
+];
 
 function layer(c: CanvasRenderingContext2D, L: Layer, cam: { x: number; y: number; zoom: number }, body?: () => void) {
   c.save(); c.translate(W / 2, H / 2); c.scale(cam.zoom, cam.zoom); c.translate(-cam.x * L.speed, -cam.y);
@@ -135,13 +192,24 @@ function drawBubble(c: CanvasRenderingContext2D, text: string, x: number, y: num
   c.restore();
 }
 
-export function renderFrame(c: CanvasRenderingContext2D, s: Scene, t: number, opts: { bubbles?: boolean } = {}) {
+export function renderFrame(c: CanvasRenderingContext2D, s: Scene, t: number, opts: { bubbles?: boolean; theme?: ThemeId } = {}) {
   const cam = camAt(s, t);
+  const th = THEMES[opts.theme ?? "day"];
   const g = c.createLinearGradient(0, 0, 0, H);
-  g.addColorStop(0, "#8fd0ff"); g.addColorStop(1, "#eef8ff");
+  th.sky.forEach((col, i) => g.addColorStop(i / (th.sky.length - 1), col));
   c.fillStyle = g; c.fillRect(0, 0, W, H);
-  layer(c, hills, cam); layer(c, city, cam);
-  layer(c, ground, cam, () => {
+  if (th.stars) {
+    c.fillStyle = "#fff";
+    for (let k = 0; k < 70; k++) { const r = 1 + rnd(k, 3) * 1.6; c.globalAlpha = 0.5 + rnd(k, 4) * 0.5; c.fillRect(rnd(k, 1) * W, rnd(k, 2) * H * 0.6, r, r); }
+    c.globalAlpha = 1;
+  }
+  if (th.sun) {
+    c.fillStyle = th.sun.c; c.globalAlpha = 0.25; c.beginPath(); c.arc(th.sun.x, th.sun.y, th.sun.r * 1.7, 0, 7); c.fill();
+    c.globalAlpha = 1; c.beginPath(); c.arc(th.sun.x, th.sun.y, th.sun.r, 0, 7); c.fill();
+  }
+  if (th.far) layer(c, th.far, cam);
+  layer(c, th.mid, cam);
+  layer(c, th.ground, cam, () => {
     const order = [...s.actors].sort((a, b) => b.depth - a.depth);
     const states = order.map(a => ({ a, st: actorState(s, a, t) }));
     for (const { a, st } of states) {
@@ -154,5 +222,5 @@ export function renderFrame(c: CanvasRenderingContext2D, s: Scene, t: number, op
       }
     }
   });
-  layer(c, fg, cam);
+  if (th.fg) layer(c, th.fg, cam);
 }
