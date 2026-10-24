@@ -20,7 +20,7 @@ export default function Builder({ def, setDef }: { def: CharacterDef; setDef: (d
   );
   const color = (k: "hair" | "top" | "bottom" | "shoes", label: string) => (
     <label key={k} className="flex items-center gap-1 text-sm">{label}
-      <input type="color" value={def[k]} onChange={e => up({ [k]: e.target.value })} />
+      <input type="color" value={def[k]} onChange={e => up({ [k]: e.target.value } as Partial<CharacterDef>)} />
     </label>
   );
 
