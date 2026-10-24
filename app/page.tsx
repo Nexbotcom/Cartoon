@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
+import ArtImporter from "@/components/ArtImporter";
 import Builder from "@/components/Builder";
 import PosePanel from "@/components/PosePanel";
 import Timeline from "@/components/Timeline";
@@ -14,7 +15,7 @@ Mina: look at Sam, smile, say "Hey Sam! You are late again."
 Sam: say "Sorry! The bus was really slow." while shrugging
 Camera: close-up on Mina`;
 
-type Tab = "script" | "stage" | "look" | "pose" | "timeline";
+type Tab = "script" | "stage" | "look" | "art" | "pose" | "timeline";
 const SLOTS = [380, 900, 640, 200, 1080];
 const panel = "rounded-2xl border border-white/10 bg-white/[0.03] p-3";
 const lbl = "mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400";
@@ -47,7 +48,6 @@ export default function Studio() {
 
   const setT = (t: number) => { timeRef.current = t; setTime(t); };
 
-  // live preview: while the Pose tab has an unsaved draft, include it as a temporary block
   const castLive = useMemo(() => {
     if (tab !== "pose" || draftT0 === null || !cast[sel] || Object.keys(draft).length === 0) return cast;
     return cast.map((c, i) =>
@@ -55,6 +55,9 @@ export default function Studio() {
   }, [cast, tab, sel, draft, draftT0, draftDur]);
 
   const scene = useMemo(() => parseScript(script, castLive), [script, castLive]);
+  const sceneRef = useRef(scene);
+  sceneRef.current = scene;
+
   const ctx = () => cv.current!.getContext("2d")!;
   const stop = () => cancelAnimationFrame(raf.current);
 
@@ -67,6 +70,13 @@ export default function Studio() {
   }, [scene, bubbles, theme]);
   useEffect(() => { listChars().then(setLib); }, [tab]);
   useEffect(() => { setDraft({}); setDraftT0(null); }, [sel]);
+
+  // imported images finish loading after the first draw: repaint the current frame
+  useEffect(() => {
+    const h = () => { if (cv.current) renderFrame(ctx(), sceneRef.current, timeRef.current, { bubbles, theme }); };
+    window.addEventListener("toon-sprite", h);
+    return () => window.removeEventListener("toon-sprite", h);
+  }, [bubbles, theme]);
 
   const play = (onDone?: () => void) => {
     stop();
@@ -155,6 +165,7 @@ export default function Studio() {
       ))}
     </div>
   );
+  const needActor = <p className={`${panel} text-sm text-slate-400`}>Add an actor in the Stage tab first.</p>;
 
   return (
     <div className="min-h-screen bg-[#0b0d14] text-slate-100">
@@ -189,7 +200,7 @@ export default function Studio() {
         <section className="min-w-0 space-y-3">
           <div className="flex gap-1 overflow-x-auto rounded-2xl border border-white/10 bg-white/[0.03] p-1">
             {tabBtn("script", "🎬 Script")}{tabBtn("stage", "🎭 Stage")}{tabBtn("look", "🎨 Character")}
-            {tabBtn("pose", "🕺 Pose")}{tabBtn("timeline", "⏱ Timeline")}
+            {tabBtn("art", "🖼 Art")}{tabBtn("pose", "🕺 Pose")}{tabBtn("timeline", "⏱ Timeline")}
           </div>
 
           {tab === "script" && (
@@ -241,7 +252,7 @@ export default function Studio() {
                     <div key={i} className={`rounded-xl border p-2 ${sel === i ? "border-violet-400 bg-violet-500/10" : "border-white/10 bg-white/5"}`}>
                       <div className="flex items-center gap-2">
                         <button onClick={() => setSel(i)} className="flex-1 text-left font-medium">{c.def.name}
-                          <span className="ml-2 text-xs font-normal text-slate-400">{c.def.style}</span></button>
+                          <span className="ml-2 text-xs font-normal text-slate-400">{c.def.sprite ? "imported art" : c.def.style}</span></button>
                         <button onClick={() => { setSel(i); setTab("look"); }} className="rounded-lg border border-white/10 px-2 py-1 text-xs hover:bg-white/10">Edit look</button>
                         <button onClick={() => remove(i)} className="px-2 text-red-400">✕</button>
                       </div>
@@ -277,7 +288,19 @@ export default function Studio() {
 
           {tab === "look" && (cast[sel]
             ? (<>{actorChips}<Builder def={cast[sel].def} setDef={d => patch(sel, { def: d })} /></>)
-            : <p className={`${panel} text-sm text-slate-400`}>Add an actor in the Stage tab first.</p>)}
+            : needActor)}
+
+          {tab === "art" && (cast[sel]
+            ? (<>
+                {actorChips}
+                <ArtImporter
+                  name={cast[sel].def.name}
+                  hasArt={!!cast[sel].def.sprite}
+                  onApply={pack => patch(sel, { def: { ...cast[sel].def, sprite: pack } })}
+                  onRemove={() => { const d = { ...cast[sel].def }; delete d.sprite; patch(sel, { def: d }); }}
+                />
+              </>)
+            : needActor)}
 
           {tab === "pose" && (cast[sel]
             ? (<>
@@ -286,7 +309,7 @@ export default function Studio() {
                   onChange={draftChange} onDur={setDraftDur} onAdd={addBlock} onReset={resetDraft}
                   onDelete={delBlock} onEdit={editBlock} onPatch={patchBlock} />
               </>)
-            : <p className={`${panel} text-sm text-slate-400`}>Add an actor in the Stage tab first.</p>)}
+            : needActor)}
 
           {tab === "timeline" && (
             <div className={panel}>
@@ -299,7 +322,6 @@ export default function Studio() {
               <Timeline scene={scene} time={time} onSeek={scrub} pps={pps} />
               <p className="mt-2 text-xs text-slate-500">
                 Drag on the timeline to scrub. Blue = walking, pink = talking, amber = gestures and expressions, violet = manual poses, sky = camera.
-                Lower the zoom to fit long scenes.
               </p>
             </div>
           )}
