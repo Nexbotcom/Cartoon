@@ -4,23 +4,32 @@ import { CharacterDef, StyleId } from "@/lib/types";
 import { PRESETS } from "@/lib/presets";
 import { deleteChar, exportChar, importChars, listChars, saveChar } from "@/lib/library";
 
-const STYLES: StyleId[] = ["stick", "flat", "anime", "sketch"];
+const STYLES: [StyleId, string][] = [["flat", "Flat vector"], ["anime", "Anime"], ["sketch", "Sketch"], ["stick", "Stick"]];
 const HAIRS: CharacterDef["hairStyle"][] = ["short", "spiky", "bun", "long", "none"];
 const OUTFITS: CharacterDef["outfit"][] = ["pants", "shorts", "skirt"];
-const SKINS = ["#fde0c5", "#f2c9a0", "#d9a066", "#a8714a", "#6f4a2f", "#3d2616"];
+const SLEEVES: CharacterDef["sleeve"][] = ["short", "long"];
+const SKINS = ["#fde0c5", "#f2c9a0", "#e7b88f", "#c68a5c", "#9a6b4b", "#6f4a2f", "#3d2616"];
+
+const box = "rounded-2xl border border-white/10 bg-white/[0.03] p-3";
+const head = "mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400";
 
 export default function Builder({ def, setDef }: { def: CharacterDef; setDef: (d: CharacterDef) => void }) {
   const [lib, setLib] = useState<CharacterDef[]>([]);
   useEffect(() => { listChars().then(setLib); }, []);
   const up = (p: Partial<CharacterDef>) => setDef({ ...def, ...p });
+  const swap = (src: CharacterDef) => setDef({ ...src, id: def.id, name: def.name });
 
   const chip = (label: string, active: boolean, onClick: () => void) => (
     <button key={label} onClick={onClick}
-      className={`rounded-lg border px-3 py-1 text-sm ${active ? "bg-black text-white" : ""}`}>{label}</button>
+      className={`rounded-xl border px-3 py-1.5 text-sm transition ${active ? "border-violet-400 bg-violet-500/20 text-white" : "border-white/10 bg-white/5 text-slate-300 hover:bg-white/10"}`}>
+      {label}
+    </button>
   );
-  const color = (k: "hair" | "top" | "bottom" | "shoes", label: string) => (
-    <label key={k} className="flex items-center gap-1 text-sm">{label}
-      <input type="color" value={def[k]} onChange={e => up({ [k]: e.target.value } as Partial<CharacterDef>)} />
+  const color = (k: "hair" | "top" | "bottom" | "shoes" | "eye", label: string) => (
+    <label key={k} className="flex items-center gap-2 text-sm text-slate-300">
+      <input type="color" value={def[k] ?? "#3b2a1e"} onChange={e => up({ [k]: e.target.value } as Partial<CharacterDef>)}
+        className="h-8 w-8 cursor-pointer rounded-lg border-0 bg-transparent" />
+      {label}
     </label>
   );
 
@@ -36,55 +45,78 @@ export default function Builder({ def, setDef }: { def: CharacterDef; setDef: (d
   };
   const upload = async (f?: File) => {
     if (!f) return;
-    for (const c of importChars(await f.text())) await saveChar(c);
+    for (const ch of importChars(await f.text())) await saveChar(ch);
     setLib(await listChars());
   };
 
   return (
-    <section className="space-y-3 rounded-xl border p-3">
-      <div className="flex flex-wrap gap-2">{PRESETS.map(p => chip(p.name, def.id === p.id, () => setDef(p)))}</div>
-      <input value={def.name} onChange={e => up({ name: e.target.value })} className="w-full rounded-lg border p-2" placeholder="Name" />
-
-      <div className="flex flex-wrap gap-2">{STYLES.map(s => chip(s, def.style === s, () => up({ style: s })))}</div>
-      <div className="flex flex-wrap items-center gap-2">
-        {SKINS.map(s => (
-          <button key={s} onClick={() => up({ skin: s })} style={{ background: s }}
-            className={`h-7 w-7 rounded-full border-2 ${def.skin === s ? "border-black" : "border-transparent"}`} />
-        ))}
+    <div className="space-y-3">
+      <div className={box}>
+        <p className={head}>Name (used in the script)</p>
+        <input value={def.name} onChange={e => up({ name: e.target.value })}
+          className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-slate-100 outline-none focus:border-violet-400" />
       </div>
-      <div className="flex flex-wrap gap-2">{HAIRS.map(h => chip(h, def.hairStyle === h, () => up({ hairStyle: h })))}</div>
-      <div className="flex flex-wrap gap-2">{OUTFITS.map(o => chip(o, def.outfit === o, () => up({ outfit: o })))}</div>
-      <div className="flex flex-wrap gap-3">{color("hair", "Hair")}{color("top", "Top")}{color("bottom", "Bottom")}{color("shoes", "Shoes")}</div>
 
-      <label className="block text-sm">Build
-        <input type="range" min={0.8} max={1.25} step={0.05} value={def.build} onChange={e => up({ build: +e.target.value })} className="w-full" />
-      </label>
-      <label className="block text-sm">Height
-        <input type="range" min={220} max={380} step={5} value={def.height} onChange={e => up({ height: +e.target.value })} className="w-full" />
-      </label>
+      <div className={box}>
+        <p className={head}>Start from a look</p>
+        <div className="flex flex-wrap gap-2">{PRESETS.map(p => chip(p.name, false, () => swap(p)))}</div>
+      </div>
 
-      <div className="flex flex-wrap gap-2">
-        <button onClick={() => save(false)} className="rounded-lg bg-emerald-600 px-3 py-1 text-white">Save</button>
-        <button onClick={() => save(true)} className="rounded-lg border px-3 py-1">Save as new</button>
-        <button onClick={download} className="rounded-lg border px-3 py-1">Export JSON</button>
-        <label className="cursor-pointer rounded-lg border px-3 py-1">Import
-          <input type="file" accept=".json" hidden onChange={e => upload(e.target.files?.[0])} />
+      <div className={box}>
+        <p className={head}>Art style</p>
+        <div className="flex flex-wrap gap-2">{STYLES.map(([id, label]) => chip(label, def.style === id, () => up({ style: id })))}</div>
+      </div>
+
+      <div className={box}>
+        <p className={head}>Skin and hair</p>
+        <div className="mb-3 flex flex-wrap gap-2">
+          {SKINS.map(s => (
+            <button key={s} onClick={() => up({ skin: s })} style={{ background: s }}
+              className={`h-8 w-8 rounded-full border-2 ${def.skin === s ? "border-white" : "border-transparent"}`} />
+          ))}
+        </div>
+        <div className="mb-3 flex flex-wrap gap-2">{HAIRS.map(h => chip(h, def.hairStyle === h, () => up({ hairStyle: h })))}</div>
+        <div className="flex flex-wrap gap-4">{color("hair", "Hair")}{color("eye", "Eyes")}</div>
+      </div>
+
+      <div className={box}>
+        <p className={head}>Outfit</p>
+        <div className="mb-3 flex flex-wrap gap-2">{OUTFITS.map(o => chip(o, def.outfit === o, () => up({ outfit: o })))}</div>
+        <div className="mb-3 flex flex-wrap gap-2">{SLEEVES.map(s => chip(`${s} sleeves`, (def.sleeve ?? "short") === s, () => up({ sleeve: s })))}</div>
+        <div className="flex flex-wrap gap-4">{color("top", "Top")}{color("bottom", "Bottom")}{color("shoes", "Shoes")}</div>
+      </div>
+
+      <div className={box}>
+        <p className={head}>Body</p>
+        <label className="mb-2 block text-sm text-slate-300">Build
+          <input type="range" min={0.8} max={1.25} step={0.05} value={def.build ?? 1} onChange={e => up({ build: +e.target.value })} className="w-full accent-violet-500" />
+        </label>
+        <label className="block text-sm text-slate-300">Height
+          <input type="range" min={220} max={380} step={5} value={def.height} onChange={e => up({ height: +e.target.value })} className="w-full accent-violet-500" />
         </label>
       </div>
 
-      {lib.length > 0 && (
-        <div>
-          <p className="mb-1 text-sm font-medium">My library</p>
+      <div className={box}>
+        <p className={head}>Library</p>
+        <div className="mb-3 flex flex-wrap gap-2">
+          <button onClick={() => save(false)} className="rounded-xl bg-emerald-500 px-3 py-1.5 text-sm font-medium text-black">Save</button>
+          <button onClick={() => save(true)} className="rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-sm">Save as new</button>
+          <button onClick={download} className="rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-sm">Export JSON</button>
+          <label className="cursor-pointer rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-sm">Import
+            <input type="file" accept=".json" hidden onChange={e => upload(e.target.files?.[0])} />
+          </label>
+        </div>
+        {lib.length === 0 ? <p className="text-sm text-slate-500">No saved characters yet.</p> : (
           <div className="flex flex-wrap gap-2">
-            {lib.map(c => (
-              <span key={c.id} className="flex items-center overflow-hidden rounded-lg border text-sm">
-                <button onClick={() => setDef(c)} className={`px-3 py-1 ${def.id === c.id ? "bg-black text-white" : ""}`}>{c.name}</button>
-                <button onClick={async () => setLib(await deleteChar(c.id))} className="px-2 py-1 text-red-600">✕</button>
+            {lib.map(ch => (
+              <span key={ch.id} className="flex items-center overflow-hidden rounded-xl border border-white/10 bg-white/5 text-sm">
+                <button onClick={() => swap(ch)} className="px-3 py-1.5 hover:bg-white/10">{ch.name}</button>
+                <button onClick={async () => setLib(await deleteChar(ch.id))} className="px-2 py-1.5 text-red-400 hover:bg-white/10">✕</button>
               </span>
             ))}
           </div>
-        </div>
-      )}
-    </section>
+        )}
+      </div>
+    </div>
   );
 }
