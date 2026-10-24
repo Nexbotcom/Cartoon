@@ -30,6 +30,7 @@ export function drawActor(
   const ink = st.line || "#222";
   const col = (k: string) => (st.mono ? "#fff" : k);
   const wob = d.style === "sketch" ? 1.4 : 0;
+  const B = d.build ?? 1;
   const j = (n: number) => (wob ? Math.sin(seed * 13.1 + n * 7.7) * wob : 0);
 
   c.save();
@@ -52,9 +53,11 @@ export function drawActor(
     if (st.line || !st.fill) { c.strokeStyle = ink; c.lineWidth = st.w || 3; c.stroke(); }
   };
   const leg = (a: number, n: number) => {
-    const [ex, ey] = limb(0, hipY, a, legLen, H * st.legW, d.bottom, n);
-    blob(ex + hr * 0.4, ey, hr * 0.6, hr * 0.28, d.shoes);
-  };
+  const bare = d.outfit !== "pants";
+  const [ex, ey] = limb(0, hipY, a, legLen, H * st.legW * B, bare ? d.skin : d.bottom, n);
+  if (d.outfit === "shorts") limb(0, hipY, a, legLen * 0.4, H * st.legW * B * 1.1, d.bottom, n + 20);
+  blob(ex + hr * 0.4, ey, hr * 0.6, hr * 0.28, d.shoes);
+};
   const arm = (a: number, n: number) => {
     const [ex, ey] = limb(0, shY, a, armLen, H * st.armW, d.top, n);
     blob(ex, ey, hr * 0.28, hr * 0.28, d.skin);
