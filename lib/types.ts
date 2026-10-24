@@ -5,7 +5,9 @@ export type ClipId = "idle" | "walk" | "wave" | "talk" | "type" | "jump";
 export interface CharacterDef {
   id: string; name: string; style: StyleId;
   skin: string; hair: string; top: string; bottom: string; shoes: string;
-  hairStyle: "short" | "bun" | "long" | "none";
+  hairStyle: "short" | "spiky" | "bun" | "long" | "none";
+  outfit: "pants" | "shorts" | "skirt";
+  build: number;   // 0.8 slim to 1.25 broad
   height: number;
 }
 export interface Pose {
