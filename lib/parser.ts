@@ -1,4 +1,4 @@
-import { Action, Actor, CamKey, CastMember, ClipId, Expr, PropMember, Scene, SceneProp, View } from "./types";
+import { Action, Actor, CamKey, CastMember, ClipId, Expr, PropMember, Scene, SceneProp, Shot3D, View } from "./types";
 import { FOOT, H, W } from "./engine";
 
 const EXPR: [RegExp, Expr][] = [
@@ -34,6 +34,7 @@ export function parseScript(raw: string, cast: CastMember[], propList: PropMembe
   const px = actors.map(a => a.x), pxp = props.map(p => p.x);
   const posOf = (i: number) => (i >= 1000 ? pxp[i - 1000] : px[i]);
   const cam: CamKey[] = [{ t: 0, x: W / 2, y: H / 2, zoom: 1 }];
+  const shots: Shot3D[] = [];
   let beatEnd = 0, prevStart = 0, maxT = 0;
 
   const findNames = (l: string, skip: number) =>
@@ -159,11 +160,19 @@ export function parseScript(raw: string, cast: CastMember[], propList: PropMembe
   const camSeg = (seg: string, t0: number): number => {
     const l = seg.toLowerCase();
     const explicit = l.match(/(\d+(?:\.\d+)?)\s*(?:s\b|sec)/)?.[1];
-    const dur = explicit ? +explicit : 2;
+    const orbit = /\b(360|orbit\w*|spin\w*|revolv\w*|rotate\w* around|circl\w* around)\b/.test(l);
+    const dur = explicit ? +explicit : orbit ? 5 : 2;
     const last = cam[cam.length - 1];
     cam.push({ ...last, t: t0 });
     const tg = findNames(l, -1)[0], tp = findProps(l)[0];
     const named = tg ?? (tp !== undefined ? 1000 + tp : undefined);
+    if (orbit) {
+      const dm = l.match(/(\d+)\s*(?:°|deg)/);
+      const deg = dm ? +dm[1] : /half/.test(l) ? 180 : 360;
+      shots.push({ t0, t1: t0 + dur, deg: /counter|anti|\bleft\b/.test(l) ? -deg : deg, target: named });
+      cam.push({ ...last, t: t0 + dur });
+      return t0 + dur;
+    }
     let next: CamKey = { ...last, t: t0 + dur };
     const closeUp = /close.?up|tight/.test(l);
     if (/zoom in|push in|close.?up|tight|closer/.test(l)) {
@@ -217,5 +226,5 @@ export function parseScript(raw: string, cast: CastMember[], propList: PropMembe
 
   for (const a of actors) for (const k of a.keys) maxT = Math.max(maxT, k.t1);
   cam.sort((a, b) => a.t - b.t);
-  return { duration: Math.max(maxT, beatEnd) + 0.6, actors, props, cam };
+  return { duration: Math.max(maxT, beatEnd) + 0.6, actors, props, cam, shots };
 }
