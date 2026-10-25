@@ -1,6 +1,6 @@
 import { Action, Actor, ClipId, Pose, Scene, ThemeId, View } from "./types";
 import { BASE, clips, drawActor } from "./draw";
-import { drawSprite } from "./sprite";
+import { drawProp } from "./props";
 
 export const W = 1280, H = 720, GROUND = 560, FOOT = 600;
 const sm = (u: number) => u * u * (3 - 2 * u);
@@ -8,17 +8,29 @@ const lerp = (a: number, b: number, u: number) => a + (b - a) * u;
 const cl = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 const rnd = (i: number, k: number) => { const s = Math.sin(i * 127.1 + k * 311.7) * 43758.5; return s - Math.floor(s); };
 
-export function posAt(a: Actor, t: number) {
+type Mover = { x: number; actions: Action[]; startHidden?: boolean };
+
+export function posAt(a: Mover, t: number) {
   let x = a.x, face = 1, moving = false;
   for (const m of a.actions) {
     if (m.moveTo === undefined) continue;
     if (t < m.t0) break;
+    if (m.fromX !== undefined) x = m.fromX;
     const u = t >= m.t1 ? 1 : (t - m.t0) / Math.max(0.01, m.t1 - m.t0);
     if (m.moveTo !== x) face = m.moveTo > x ? 1 : -1;
     if (u < 1) { x = lerp(x, m.moveTo, sm(u)); moving = true; break; }
     x = m.moveTo;
   }
   return { x, face, moving };
+}
+
+export function visibleAt(a: Mover, t: number) {
+  let v = !a.startHidden;
+  for (const q of a.actions) {
+    if (q.enter && t >= q.t0) v = true;
+    if (q.exit && t >= q.t1) v = false;
+  }
+  return v;
 }
 
 function lookVec(s: Scene, look: string, from: number, t: number) {
@@ -28,7 +40,8 @@ function lookVec(s: Scene, look: string, from: number, t: number) {
   if (look === "right") return { yaw: 35, pitch: 0, ex: 0.9, ey: 0 };
   if (look === "up") return { yaw: 0, pitch: -14, ex: 0, ey: -0.8 };
   if (look === "down") return { yaw: 0, pitch: 14, ex: 0, ey: 0.8 };
-  const tg = s.actors.find(q => q.def.name.toLowerCase() === look.toLowerCase());
+  const lc = look.toLowerCase();
+  const tg: Mover | undefined = s.actors.find(q => q.def.name.toLowerCase() === lc) ?? s.props.find(q => q.name.toLowerCase() === lc);
   if (!tg) return z;
   const dx = posAt(tg, t).x - from;
   return { yaw: cl(dx / 8, -38, 38), pitch: 0, ex: cl(dx / 120, -1, 1), ey: 0 };
@@ -46,9 +59,10 @@ export function actorState(s: Scene, a: Actor, t: number) {
   const clip: ClipId = act.find(q => q.clip)?.clip ?? "idle";
   const moving = pos.moving;
 
+  const gait: ClipId | null = clip === "run" ? "run" : moving || clip === "walk" ? "walk" : null;
   let pose: Pose = { ...BASE, ...clips.idle(t) };
-  if (moving || clip === "walk") pose = { ...pose, ...clips.walk(t) };
-  if (clip !== "walk" && clip !== "idle") pose = { ...pose, ...clips[clip](t) };
+  if (gait) pose = { ...pose, ...clips[gait](t) };
+  if (clip !== "walk" && clip !== "run" && clip !== "idle") pose = { ...pose, ...clips[clip](t) };
 
   let yaw = pose.yaw, pitch = pose.pitch, ex = 0, ey = 0, face = pos.face;
   if (lookA) {
@@ -75,7 +89,6 @@ export function actorState(s: Scene, a: Actor, t: number) {
   pose.blink = ph < 0.16 ? Math.sin((ph / 0.16) * Math.PI) : 0;
   pose.mouth = say ? Math.abs(Math.sin(t * 11)) * (0.55 + 0.45 * Math.abs(Math.sin(t * 3.1))) : 0;
 
-  // manual pose blocks: full strength inside [t0, t1], 0.25s fade before and after
   for (const k of a.keys) {
     const w = sm(cl((t - (k.t0 - 0.25)) / 0.25, 0, 1)) * (1 - sm(cl((t - k.t1) / 0.25, 0, 1)));
     if (w <= 0) continue;
@@ -85,17 +98,20 @@ export function actorState(s: Scene, a: Actor, t: number) {
     }
   }
 
-  const view: View = clip === "type" ? "front" : moving || clip === "walk" ? "side" : viewA ?? "front";
+  const side = moving || clip === "walk" || clip === "run";
+  const view: View = clip === "type" ? "front" : side ? "side" : viewA ?? "front";
   return { x: pos.x, face, view, clip, expr, say, pose };
 }
+
+const entity = (s: Scene, i: number | undefined): Mover | undefined =>
+  i === undefined ? undefined : i >= 1000 ? s.props[i - 1000] : s.actors[i];
 
 export function camAt(s: Scene, t: number) {
   const k = s.cam; let i = 0;
   while (i < k.length - 1 && k[i + 1].t <= t) i++;
   const a = k[i], b = k[i + 1] ?? a;
   const u = b.t === a.t ? 1 : sm(cl((t - a.t) / (b.t - a.t), 0, 1));
-  const fa = a.follow !== undefined ? s.actors[a.follow] : undefined;
-  const fb = b.follow !== undefined ? s.actors[b.follow] : undefined;
+  const fa = entity(s, a.follow), fb = entity(s, b.follow);
   const x = fb && fa === fb ? posAt(fb, t).x : lerp(a.x, fb ? posAt(fb, t).x : b.x, u);
   return { x, y: lerp(a.y, b.y, u), zoom: lerp(a.zoom, b.zoom, u) };
 }
@@ -211,19 +227,27 @@ export function renderFrame(c: CanvasRenderingContext2D, s: Scene, t: number, op
   if (th.far) layer(c, th.far, cam);
   layer(c, th.mid, cam);
   layer(c, th.ground, cam, () => {
-    const order = [...s.actors].sort((a, b) => b.depth - a.depth);
-    const states = order.map(a => ({ a, st: actorState(s, a, t) }));
-    for (const { a, st } of states) {
+    const items: { depth: number; order: number; draw: () => void }[] = [];
+    const talkers: { x: number; y: number; say: string }[] = [];
+
+    for (const p of s.props) {
+      if (!visibleAt(p, t)) continue;
+      const ps = posAt(p, t);
+      const sc = (1 - p.depth * 0.22) * p.scale;
+      const mirror = (p.flip ? -1 : 1) * (p.kind === "car" ? ps.face : 1);
+      items.push({ depth: p.depth, order: 0, draw: () => drawProp(c, p.kind, p.color, ps.x, FOOT - p.depth * 70, sc, mirror, ps.x / 28) });
+    }
+    for (const a of s.actors) {
+      if (!visibleAt(a, t)) continue;
+      const st = actorState(s, a, t);
       const fy = FOOT - a.depth * 70, sc = 1 - a.depth * 0.22;
-      if (a.def.sprite) drawSprite(c, a.def, st, t, fy, sc);
-      else drawActor(c, a.def, st.pose, st.expr, st.x, fy, sc,
-        { view: st.view, face: st.face, seed: Math.floor(t * 8), prop: st.clip === "type" ? "laptop" : undefined });
+      items.push({ depth: a.depth, order: 1, draw: () => drawActor(c, a.def, st.pose, st.expr, st.x, fy, sc,
+        { view: st.view, face: st.face, seed: Math.floor(t * 8), prop: st.clip === "type" ? "laptop" : undefined }) });
+      if (st.say) talkers.push({ x: st.x, y: fy - a.def.height * sc * 1.02 - 10, say: st.say });
     }
-    if (opts.bubbles !== false) {
-      for (const { a, st } of states) {
-        if (st.say) drawBubble(c, st.say, st.x, FOOT - a.depth * 70 - a.def.height * (1 - a.depth * 0.22) * 1.02 - 10);
-      }
-    }
+    items.sort((a, b) => b.depth - a.depth || a.order - b.order);
+    for (const it of items) it.draw();
+    if (opts.bubbles !== false) for (const q of talkers) drawBubble(c, q.say, q.x, q.y);
   });
   if (th.fg) layer(c, th.fg, cam);
 }
