@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { CharacterDef, PropKind, Scene, ThemeId } from "./types";
 import { FOOT, H, W, actorState, camAt, drawBubble, posAt, visibleAt } from "./engine";
+import { CharRig, createCharFactory } from "./char3d";
 
 const D = Math.PI / 180, TAU = Math.PI * 2;
 const UNIT = 150;                                   // 2D pixels per 3D metre
@@ -34,15 +35,6 @@ const ENV: Record<ThemeId, EnvCfg> = {
   room:   { sky: ["#eadfce", "#d9ccb8"], ground: "#b98c5e", hemi: ["#fff2e0", "#8a6a4a", 1.5], room: true },
 };
 
-interface Rig {
-  sig: string; root: THREE.Group; body: THREE.Group; torso: THREE.Group; neck: THREE.Group;
-  armL: THREE.Group; elL: THREE.Group; armR: THREE.Group; elR: THREE.Group;
-  legL: THREE.Group; knL: THREE.Group; legR: THREE.Group; knR: THREE.Group;
-  eyes: { g: THREE.Group; pup: THREE.Group }[]; brows: THREE.Mesh[];
-  mFlat: THREE.Mesh; mSmile: THREE.Mesh; mFrown: THREE.Mesh; mOpen: THREE.Mesh;
-  laptop: THREE.Group; angle: number; init: boolean; s: number;
-}
-
 export function createRenderer3D(): Renderer3D {
   const canvas = document.createElement("canvas");
   canvas.width = W; canvas.height = H;
@@ -61,9 +53,11 @@ export function createRenderer3D(): Renderer3D {
   sun.shadow.camera.left = -14; sun.shadow.camera.right = 14; sun.shadow.camera.top = 14; sun.shadow.camera.bottom = -14;
   sun.shadow.camera.near = 1; sun.shadow.camera.far = 90;
   sun.shadow.bias = -0.0005;
+  const rim = new THREE.DirectionalLight(0xaaccff, 0.5);
+  rim.position.set(-6, 5, -8);
   const roomLight = new THREE.PointLight(0xfff0d0, 0, 18, 2);
   roomLight.position.set(0, 4, -3);
-  scene3.add(hemi, sun, sun.target, roomLight);
+  scene3.add(hemi, sun, sun.target, rim, roomLight);
 
   // ---------- materials ----------
   const gm = new THREE.DataTexture(new Uint8Array([60, 140, 255]), 3, 1, THREE.RedFormat);
@@ -80,8 +74,9 @@ export function createRenderer3D(): Renderer3D {
     if (!m) { m = new THREE.MeshToonMaterial({ color: new THREE.Color(col), gradientMap: gm, emissive: new THREE.Color(col), emissiveIntensity: k }); matCache.set(key, m); }
     return m;
   };
+  const charF = createCharFactory(gm);
 
-  // ---------- shape helpers ----------
+  // ---------- shape helpers (props and environment) ----------
   const mesh = (parent: THREE.Object3D, geo: THREE.BufferGeometry, mat: THREE.Material, x = 0, y = 0, z = 0) => {
     const m = new THREE.Mesh(geo, mat);
     m.position.set(x, y, z); m.castShadow = true; m.receiveShadow = true;
@@ -97,113 +92,11 @@ export function createRenderer3D(): Renderer3D {
     m.scale.set(sx, sy, sz);
     return m;
   };
-  const limb = (g: THREE.Object3D, r: number, len: number, col: string) =>
-    mesh(g, new THREE.CapsuleGeometry(r, Math.max(0.01, len - 2 * r), 4, 10), toon(col), 0, -len / 2, 0);
   const disposeObj = (o: THREE.Object3D) => {
     o.traverse(ch => { const m = ch as THREE.Mesh; if (m.geometry) m.geometry.dispose(); });
   };
 
-  // ---------- characters ----------
-  const buildCharacter = (def: CharacterDef): Rig => {
-    const b = def.build ?? 1;
-    const skin = def.skin, top = def.top, bot = def.bottom;
-    const root = new THREE.Group(), body = new THREE.Group();
-    root.add(body);
-    const hipY = 0.88;
-
-    const mkLeg = (sgn: number) => {
-      const lg = new THREE.Group(); lg.position.set(sgn * 0.1 * b, hipY, 0); body.add(lg);
-      const bare = def.outfit !== "pants";
-      limb(lg, 0.072 * b, 0.44, def.outfit === "skirt" ? skin : bot);
-      const kn = new THREE.Group(); kn.position.y = -0.44; lg.add(kn);
-      limb(kn, 0.055 * b, 0.4, bare ? skin : bot);
-      bx(kn, 0.11 * b, 0.08, 0.25, def.shoes, 0, -0.41, 0.045);
-      return { lg, kn };
-    };
-    const L = mkLeg(-1), R = mkLeg(1);
-
-    const torso = new THREE.Group(); torso.position.y = hipY; body.add(torso);
-    mesh(torso, new THREE.CapsuleGeometry(0.15, 0.25, 4, 14), toon(top), 0, 0.28, 0).scale.set(1.35 * b, 1, 0.75);
-    sph(torso, 0.15, bot, 0, 0.02, 0, 1.3 * b, 0.75, 0.82);
-    if (def.outfit === "skirt") {
-      const sk = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.19 * b, 0.34 * b, 0.34, 24, 1, true),
-        new THREE.MeshToonMaterial({ color: new THREE.Color(bot), gradientMap: gm, side: THREE.DoubleSide }));
-      sk.position.y = -0.1; sk.castShadow = true; torso.add(sk);
-    }
-
-    const mkArm = (sgn: number) => {
-      const sh = new THREE.Group(); sh.position.set(sgn * (0.205 * b + 0.045), 0.5, 0); torso.add(sh);
-      sph(sh, 0.058, top, 0, 0, 0);
-      limb(sh, 0.045 * b, 0.29, skin);
-      const el = new THREE.Group(); el.position.y = -0.29; sh.add(el);
-      limb(el, 0.04 * b, 0.27, skin);
-      sph(el, 0.052, skin, 0, -0.29, 0);
-      if (def.sleeve === "long") { limb(sh, 0.054 * b, 0.29, top); limb(el, 0.047 * b, 0.2, top); }
-      else limb(sh, 0.058 * b, 0.17, top);
-      return { sh, el };
-    };
-    const AL = mkArm(-1), AR = mkArm(1);
-
-    const neck = new THREE.Group(); neck.position.y = 0.56; torso.add(neck);
-    cyl(neck, 0.045, 0.05, 0.1, skin, 0, 0.02, 0);
-    const head = new THREE.Group(); head.position.y = 0.14; neck.add(head);
-    sph(head, 0.115, skin, 0, 0, 0, 1, 1.1, 1);
-    sph(head, 0.028, skin, -0.113, -0.005, 0, 0.6, 1, 1);
-    sph(head, 0.028, skin, 0.113, -0.005, 0, 0.6, 1, 1);
-
-    if (def.hairStyle !== "none") {
-      const hm = toon(def.hair);
-      const cap = mesh(head, new THREE.SphereGeometry(0.122, 28, 18, 0, TAU, 0, 1.1), hm, 0, 0.012, -0.004);
-      const back = mesh(head, new THREE.SphereGeometry(0.123, 28, 18, Math.PI, Math.PI, 0, def.hairStyle === "long" ? 2.5 : 1.95), hm, 0, 0, -0.004);
-      cap.scale.y = 1.1; back.scale.y = 1.1;
-      if (def.hairStyle === "spiky") {
-        const cg = new THREE.ConeGeometry(0.04, 0.11, 6);
-        for (let k = 0; k < 7; k++) {
-          const th = k === 0 ? 0 : 0.75, ph = ((k - 1) / 6) * TAU;
-          const dir = new THREE.Vector3(Math.sin(th) * Math.cos(ph), Math.cos(th), Math.sin(th) * Math.sin(ph)).normalize();
-          const cn = mesh(head, cg, hm, dir.x * 0.125, dir.y * 0.138 + 0.01, dir.z * 0.125);
-          cn.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
-        }
-      }
-      if (def.hairStyle === "bun") sph(head, 0.058, def.hair, 0, 0.14, -0.05);
-      if (def.hairStyle === "long") mesh(head, new THREE.CapsuleGeometry(0.09, 0.2, 4, 10), hm, 0, -0.12, -0.075).scale.set(1.3, 1, 0.6);
-    }
-
-    const eyes = [-1, 1].map(s => {
-      const g = new THREE.Group(); g.position.set(s * 0.043, 0.018, 0.1); head.add(g);
-      sph(g, 0.027, "#ffffff", 0, 0, 0, 1, 1.1, 0.5);
-      const pup = new THREE.Group(); g.add(pup);
-      sph(pup, 0.017, def.eye ?? "#3b2a1e", 0, 0, 0.008, 1, 1, 0.5);
-      sph(pup, 0.009, "#14101c", 0, 0, 0.014, 1, 1, 0.5);
-      return { g, pup };
-    });
-    const browCol = def.hairStyle === "none" ? "#3a2a20" : dk(def.hair, 0.8);
-    const brows = [-1, 1].map(s => bx(head, 0.045, 0.009, 0.008, browCol, s * 0.043, 0.052, 0.104));
-    sph(head, 0.018, dk(skin, 0.9), 0, -0.018, 0.113, 1, 0.9, 1);
-
-    const mFlat = mesh(head, new THREE.BoxGeometry(0.05, 0.006, 0.006), toon("#5a2a2a"), 0, -0.052, 0.107);
-    const mSmile = mesh(head, new THREE.TorusGeometry(0.028, 0.0045, 6, 18, Math.PI), toon("#5a2a2a"), 0, -0.034, 0.107);
-    mSmile.rotation.z = Math.PI;
-    const mFrown = mesh(head, new THREE.TorusGeometry(0.026, 0.0045, 6, 18, Math.PI), toon("#5a2a2a"), 0, -0.078, 0.107);
-    const mOpen = sph(head, 0.022, "#5a1f2a", 0, -0.058, 0.1, 1, 0.5, 0.5);
-
-    const laptop = new THREE.Group(); laptop.visible = false; root.add(laptop);
-    bx(laptop, 1.0, 0.05, 0.6, "#8a6a4a", 0, 0.72, 0.55);
-    for (const [lx, lz] of [[-0.45, 0.3], [0.45, 0.3], [-0.45, 0.8], [0.45, 0.8]]) bx(laptop, 0.05, 0.72, 0.05, "#6e5238", lx, 0.36, lz);
-    bx(laptop, 0.46, 0.02, 0.32, "#c9ccd3", 0, 0.755, 0.55);
-    bx(laptop, 0.46, 0.3, 0.016, "#2b2f3a", 0, 0.9, 0.42).rotation.x = -0.18;
-
-    return {
-      sig: "", root, body, torso, neck,
-      armL: AL.sh, elL: AL.el, armR: AR.sh, elR: AR.el,
-      legL: L.lg, knL: L.kn, legR: R.lg, knR: R.kn,
-      eyes, brows, mFlat, mSmile, mFrown, mOpen, laptop,
-      angle: 0, init: false, s: def.height / 300,
-    };
-  };
-
-  // ---------- props (all in metres, front faces +Z, car faces +X) ----------
+  // ---------- props (metres; front faces +Z, car faces +X) ----------
   const buildProp = (kind: PropKind, color: string): THREE.Group => {
     const g = new THREE.Group();
     const d1 = dk(color, 0.78), d2 = dk(color, 0.62);
@@ -361,6 +254,7 @@ export function createRenderer3D(): Renderer3D {
       sun.color.set("#ffffff"); sun.intensity = 0.5; sun.position.set(2, 8, 6); sun.target.position.set(0, 0, -2);
     }
     roomLight.intensity = cfg.room ? 45 : 0;
+    rim.intensity = cfg.room ? 0.2 : 0.5;
 
     if (cfg.stars) {
       const pts: number[] = [];
@@ -427,14 +321,14 @@ export function createRenderer3D(): Renderer3D {
   };
 
   // ---------- keep 3D objects in sync with the scene ----------
-  const rigs: (Rig | null)[] = [];
+  const rigs: (CharRig | null)[] = [];
   const sigOf = (d: CharacterDef) => [d.skin, d.hair, d.eye, d.top, d.bottom, d.shoes, d.hairStyle, d.outfit, d.sleeve, d.build, d.height].join("|");
   const syncRigs = (s: Scene) => {
     s.actors.forEach((a, i) => {
       const sig = sigOf(a.def), cur = rigs[i];
       if (!cur || cur.sig !== sig) {
         if (cur) { scene3.remove(cur.root); disposeObj(cur.root); }
-        const r = buildCharacter(a.def);
+        const r = charF.build(a.def);
         r.sig = sig; r.root.scale.setScalar(a.def.height / 300);
         scene3.add(r.root); rigs[i] = r;
       }
@@ -455,69 +349,6 @@ export function createRenderer3D(): Renderer3D {
     });
     for (let i = s.props.length; i < propObjs.length; i++) { const o = propObjs[i]; if (o) { scene3.remove(o.g); disposeObj(o.g); } }
     propObjs.length = s.props.length;
-  };
-
-  // ---------- posing ----------
-  const poseRig = (rig: Rig, depth: number, st: ReturnType<typeof actorState>, jump: boolean, dt: number) => {
-    const p = st.pose, clip = st.clip, side = st.view === "side";
-    rig.root.position.set(toX(st.x), 0, toZ(depth));
-
-    let target = 0;
-    if (side) target = st.face > 0 ? Math.PI / 2 : -Math.PI / 2;
-    else if (st.view === "back") target = Math.PI;
-    else target = cl(st.lookEx * 0.55, -0.55, 0.55);
-    if (!rig.init || jump) { rig.angle = target; rig.init = true; }
-    else {
-      const dA = Math.atan2(Math.sin(target - rig.angle), Math.cos(target - rig.angle));
-      rig.angle += dA * (1 - Math.exp(-dt * 12));
-    }
-    rig.root.rotation.y = rig.angle;
-    rig.body.position.y = -p.bob * 0.0058;
-    rig.torso.rotation.x = p.lean * D;
-
-    const setArm = (sh: THREE.Group, el: THREE.Group, aU: number, aB: number, sgn: number) => {
-      sh.rotation.set(0, 0, 0); el.rotation.set(0, 0, 0);
-      if (clip === "type") { sh.rotation.x = -0.55; sh.rotation.z = sgn * 0.12; el.rotation.x = -1.45; return; }
-      if (clip === "point" && sgn > 0) { sh.rotation.x = -1.55; sh.rotation.z = 0.15; return; }
-      if (side) { sh.rotation.x = -aU * D; sh.rotation.z = sgn * 0.08; el.rotation.x = -aB * D; }
-      else {
-        sh.rotation.z = sgn * aU * D;
-        if (clip === "wave") el.rotation.z = sgn * aB * D; else el.rotation.x = -aB * D;
-      }
-    };
-    setArm(rig.armL, rig.elL, p.aLU, p.aLB, -1);
-    setArm(rig.armR, rig.elR, p.aRU, p.aRB, 1);
-
-    const setLeg = (lg: THREE.Group, kn: THREE.Group, aU: number, aB: number, sgn: number) => {
-      lg.rotation.set(0, 0, 0); kn.rotation.set(0, 0, 0);
-      if (clip === "jump") { lg.rotation.x = -0.5; kn.rotation.x = 1.0; return; }
-      if (side) { lg.rotation.x = -aU * D; kn.rotation.x = aB * D; }
-      else { lg.rotation.z = sgn * aU * D * 0.5; kn.rotation.x = Math.max(0, aB) * D; }
-    };
-    setLeg(rig.legL, rig.knL, p.lLU, p.lLB, -1);
-    setLeg(rig.legR, rig.knR, p.lRU, p.lRB, 1);
-
-    const bodyYaw = side || st.view === "back" ? 0 : cl(st.lookEx * 0.55, -0.55, 0.55);
-    rig.neck.rotation.set(cl(p.pitch, -35, 35) * D, cl(p.yaw * D - bodyYaw * 0.7, -1.0, 1.0), p.tilt * D);
-
-    // face
-    const open = Math.max(p.mouth, st.expr === "surprised" ? 0.5 : 0);
-    const talking = open > 0.12;
-    rig.mOpen.visible = talking;
-    rig.mOpen.scale.set(1.3, 0.3 + open * 1.2, 0.4);
-    rig.mSmile.visible = !talking && st.expr === "happy";
-    rig.mFrown.visible = !talking && (st.expr === "sad" || st.expr === "angry");
-    rig.mFlat.visible = !talking && !rig.mSmile.visible && !rig.mFrown.visible;
-    rig.brows.forEach((b, k) => {
-      const s = k === 0 ? -1 : 1;
-      b.rotation.z = st.expr === "angry" ? s * 0.35 : st.expr === "sad" ? -s * 0.35 : 0;
-      b.position.y = st.expr === "surprised" ? 0.066 : st.expr === "sad" ? 0.056 : st.expr === "happy" ? 0.058 : 0.052;
-    });
-    rig.eyes.forEach(e => {
-      e.g.scale.y = st.expr === "happy" ? 0.18 : Math.max(0.08, 1 - p.blink);
-      e.pup.position.set(p.eyeX * 0.009, -p.eyeY * 0.007, 0);
-    });
-    rig.laptop.visible = clip === "type";
   };
 
   // ---------- camera (normal shot follows the 2D camera; orbit only when a shot asks for it) ----------
@@ -566,7 +397,7 @@ export function createRenderer3D(): Renderer3D {
       rig.root.visible = vis;
       if (!vis) return;
       const st = actorState(s, a, t);
-      poseRig(rig, a.depth, st, jump, dt);
+      charF.pose(rig, st, toX(st.x), toZ(a.depth), jump, dt, t);
       if (st.say) talkers.push({ x: toX(st.x), y: 1.86 * rig.s, z: toZ(a.depth), say: st.say });
     });
 
