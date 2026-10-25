@@ -1,7 +1,9 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Builder from "@/components/Builder";
+import FilmPanel from "@/components/FilmPanel";
 import PosePanel from "@/components/PosePanel";
+import type { SceneFile } from "@/lib/projects";
 import Timeline from "@/components/Timeline";
 import { H, THEME_LIST, W, renderFrame } from "@/lib/engine";
 import { listChars } from "@/lib/library";
@@ -17,7 +19,7 @@ Sam: say "You made it!" then run out of the scene to the left
 Car: enter from the right and drive out of the scene to the left
 Camera: follow Sam`;
 
-type Tab = "script" | "stage" | "look" | "pose" | "timeline";
+type Tab = "script" | "stage" | "look" | "pose" | "timeline" | "film";
 const SLOTS = [380, 900, 640, 200, 1080];
 const panel = "rounded-2xl border border-white/10 bg-white/[0.03] p-3";
 const lbl = "mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400";
@@ -160,6 +162,12 @@ export default function Studio() {
     setSel(cast.length);
   };
   const addLine = (who: string) => setScript(s => `${s.trimEnd()}\n${who}: `);
+  const loadScene = (sf: SceneFile) => {
+    stop();
+    setCast(sf.cast); setProps(sf.props); setTheme(sf.theme); setScript(sf.script);
+    setSel(0); setT(0);
+  };
+  const snapshot = (): SceneFile => ({ name: "", theme, cast, props, script });
   const addOrbit = () => {
     const who = cast[sel]?.def.name ?? cast[0]?.def.name ?? "";
     setScript(s => `${s.trimEnd()}\nCamera: orbit around ${who} for 5 seconds`);
@@ -255,7 +263,7 @@ export default function Studio() {
         <section className="min-w-0 space-y-3">
           <div className="flex gap-1 overflow-x-auto rounded-2xl border border-white/10 bg-white/[0.03] p-1">
             {tabBtn("script", "🎬 Script")}{tabBtn("stage", "🎭 Stage")}{tabBtn("look", "🎨 Character")}
-            {tabBtn("pose", "🕺 Pose")}{tabBtn("timeline", "⏱ Timeline")}
+            {tabBtn("pose", "🕺 Pose")}{tabBtn("timeline", "⏱ Timeline")}{tabBtn("film", "🎞 Film")}
           </div>
 
           {tab === "script" && (
@@ -388,7 +396,7 @@ export default function Studio() {
                   onDelete={delBlock} onEdit={editBlock} onPatch={patchBlock} />
               </>)
             : needActor)}
-
+          {tab === "film" && <FilmPanel current={snapshot} onLoad={loadScene} />}
           {tab === "timeline" && (
             <div className={panel}>
               <div className="mb-2 flex items-center gap-3">
