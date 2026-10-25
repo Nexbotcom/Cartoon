@@ -24,6 +24,14 @@ export const clips: Record<ClipId, (t: number) => Partial<Pose>> = {
       bob: -Math.abs(S(t * 7)) * 5, lean: 4,
     };
   },
+  run: t => {
+    const w = S(t * 11), v = -w;
+    return {
+      lLU: w * 48, lRU: v * 48, lLB: Math.max(0, -w) * 85, lRB: Math.max(0, -v) * 85,
+      aLU: v * 55, aRU: w * 55, aLB: 70 + Math.max(0, v) * 25, aRB: 70 + Math.max(0, w) * 25,
+      bob: -Math.abs(S(t * 11)) * 12, lean: 14, tilt: S(t * 5.5) * 1.5,
+    };
+  },
   wave: t => ({ aRU: 140 + S(t * 3) * 6, aRB: 20 + S(t * 11) * 22, yaw: S(t * 1.5) * 6, tilt: 3 }),
   talk: t => ({ aLU: 16 + S(t * 3) * 10, aLB: 35 + S(t * 2.1) * 12, aRU: 20 + S(t * 2.6 + 1) * 12, aRB: 40 + S(t * 3.3) * 15, tilt: S(t * 2) * 2 }),
   type: t => ({ aLU: 18, aLB: -70 + S(t * 14) * 5, aRU: 18, aRB: -70 + S(t * 14 + 1.5) * 5, pitch: 12, bob: S(t * 2) * 0.8 }),
