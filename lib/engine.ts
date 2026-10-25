@@ -101,7 +101,7 @@ export function actorState(s: Scene, a: Actor, t: number) {
 
   const side = moving || clip === "walk" || clip === "run";
   const view: View = clip === "type" ? "front" : side ? "side" : viewA ?? "front";
-  return { x: pos.x, face, view, clip, expr, say, pose, lookEx };
+  return { x: pos.x, face, view, clip, expr, say, pose, lookEx, moving };
 }
 
 const entity = (s: Scene, i: number | undefined): Mover | undefined =>
