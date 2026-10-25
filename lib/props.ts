@@ -1,0 +1,186 @@
+import { PropKind } from "./types";
+
+export const PROP_LIST: { kind: PropKind; label: string; color: string; depth: number; w: number }[] = [
+  { kind: "sofa", label: "Sofa", color: "#7a6cc4", depth: 0.35, w: 280 },
+  { kind: "chair", label: "Chair", color: "#c9855a", depth: 0.2, w: 100 },
+  { kind: "table", label: "Table", color: "#a9744f", depth: 0.25, w: 210 },
+  { kind: "desk", label: "Desk", color: "#8a6a4a", depth: 0.4, w: 250 },
+  { kind: "bookshelf", label: "Bookshelf", color: "#8a5a3a", depth: 0.6, w: 160 },
+  { kind: "lamp", label: "Lamp", color: "#f2c94c", depth: 0.5, w: 80 },
+  { kind: "plant", label: "Plant", color: "#4f9a52", depth: 0.5, w: 90 },
+  { kind: "tv", label: "TV", color: "#2b2f3a", depth: 0.5, w: 220 },
+  { kind: "door", label: "Door", color: "#b9824f", depth: 0.8, w: 130 },
+  { kind: "bed", label: "Bed", color: "#6aa3d6", depth: 0.5, w: 320 },
+  { kind: "tree", label: "Tree", color: "#4f9a52", depth: 0.7, w: 200 },
+  { kind: "bench", label: "Bench", color: "#a9744f", depth: 0.3, w: 220 },
+  { kind: "streetlight", label: "Streetlight", color: "#3a3f4b", depth: 0.7, w: 80 },
+  { kind: "car", label: "Car", color: "#d94f4f", depth: 0.5, w: 320 },
+];
+
+const TAU = Math.PI * 2;
+const dk = (h: string, f: number) => {
+  if (h[0] !== "#" || h.length < 7) return h;
+  const n = parseInt(h.slice(1, 7), 16);
+  return `rgb(${Math.round(((n >> 16) & 255) * f)},${Math.round(((n >> 8) & 255) * f)},${Math.round((n & 255) * f)})`;
+};
+const rr = (c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) => {
+  c.beginPath(); c.moveTo(x + r, y);
+  c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r);
+  c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath();
+};
+const fl = (c: CanvasRenderingContext2D, col: string) => { c.fillStyle = col; c.fill(); };
+const circle = (c: CanvasRenderingContext2D, x: number, y: number, r: number, col: string) => {
+  c.beginPath(); c.arc(x, y, r, 0, TAU); fl(c, col);
+};
+
+// Everything is drawn with the origin at the middle of the base, facing right. roll = wheel angle in radians.
+export function drawProp(
+  c: CanvasRenderingContext2D, kind: PropKind, color: string,
+  x: number, footY: number, scale: number, mirror: number, roll: number
+) {
+  const info = PROP_LIST.find(p => p.kind === kind);
+  c.save();
+  c.translate(x, footY);
+  c.scale(scale * mirror, scale);
+  c.lineJoin = "round"; c.lineCap = "round";
+  c.fillStyle = "rgba(0,0,0,0.14)";
+  c.beginPath(); c.ellipse(0, 0, (info?.w ?? 100) * 0.5, 9, 0, 0, TAU); c.fill();
+
+  const d1 = dk(color, 0.78), d2 = dk(color, 0.62);
+  switch (kind) {
+    case "sofa": {
+      c.fillStyle = "#4a3b34"; c.fillRect(-120, -14, 14, 14); c.fillRect(106, -14, 14, 14);
+      rr(c, -130, -128, 260, 90, 18); fl(c, d1);
+      rr(c, -118, -74, 236, 52, 14); fl(c, color);
+      c.strokeStyle = d2; c.lineWidth = 3; c.beginPath(); c.moveTo(0, -72); c.lineTo(0, -24); c.stroke();
+      rr(c, -146, -100, 36, 84, 16); fl(c, d1);
+      rr(c, 110, -100, 36, 84, 16); fl(c, d1);
+      break;
+    }
+    case "chair": {
+      rr(c, -36, -150, 72, 66, 8); fl(c, d1);
+      c.fillStyle = d2; c.fillRect(-38, -50, 8, 50); c.fillRect(30, -50, 8, 50);
+      rr(c, -44, -66, 88, 18, 6); fl(c, color);
+      break;
+    }
+    case "table": {
+      c.fillStyle = d1; c.fillRect(-95, -50, 10, 50); c.fillRect(85, -50, 10, 50);
+      rr(c, -105, -64, 210, 16, 6); fl(c, color);
+      circle(c, -40, -74, 10, "#f4f1ea"); circle(c, 30, -72, 8, "#e07b45");
+      break;
+    }
+    case "desk": {
+      c.fillStyle = d1; c.fillRect(-118, -110, 14, 110); c.fillRect(104, -110, 14, 110);
+      rr(c, 36, -108, 66, 62, 4); fl(c, d1);
+      circle(c, 69, -78, 4, "#f2c94c");
+      rr(c, -125, -124, 250, 14, 5); fl(c, color);
+      rr(c, -56, -134, 74, 10, 3); fl(c, "#c9ccd3");
+      rr(c, -48, -196, 58, 62, 4); fl(c, "#2b2f3a");
+      rr(c, -42, -190, 46, 50, 2); fl(c, "#7fb3ff");
+      break;
+    }
+    case "bookshelf": {
+      rr(c, -80, -232, 160, 232, 6); fl(c, color);
+      c.fillStyle = dk(color, 0.55); c.fillRect(-72, -224, 144, 216);
+      const cols = ["#e07b45", "#5b8a3c", "#4b6aa8", "#c0405a", "#f2c94c"];
+      for (let r = 0; r < 4; r++) {
+        const sy = -224 + r * 54;
+        c.fillStyle = color; c.fillRect(-72, sy + 46, 144, 8);
+        let bx = -68, k = 0;
+        while (bx < 56) {
+          const bw = 10 + ((r * 5 + k * 3) % 7), bh = 32 + ((r * 3 + k * 5) % 14);
+          c.fillStyle = cols[(r * 7 + k) % 5]; c.fillRect(bx, sy + 46 - bh, bw, bh);
+          bx += bw + 2; k++;
+        }
+      }
+      break;
+    }
+    case "lamp": {
+      circle(c, 0, -205, 92, "rgba(255,236,160,0.18)");
+      c.fillStyle = "#3a3f4b"; c.beginPath(); c.ellipse(0, -4, 28, 8, 0, 0, TAU); c.fill();
+      c.fillRect(-3, -190, 6, 186);
+      c.beginPath(); c.moveTo(-34, -168); c.lineTo(34, -168); c.lineTo(22, -236); c.lineTo(-22, -236); c.closePath(); fl(c, color);
+      break;
+    }
+    case "plant": {
+      for (const a of [-55, -28, 0, 28, 55]) {
+        c.save(); c.translate(0, -58); c.rotate((a * Math.PI) / 180);
+        c.beginPath(); c.ellipse(0, -46, 14, 48, 0, 0, TAU); fl(c, Math.abs(a) > 30 ? d1 : color);
+        c.restore();
+      }
+      c.beginPath(); c.moveTo(-28, -62); c.lineTo(28, -62); c.lineTo(20, 0); c.lineTo(-20, 0); c.closePath(); fl(c, "#c9855a");
+      c.fillStyle = "#b0714a"; c.fillRect(-30, -68, 60, 10);
+      break;
+    }
+    case "tv": {
+      c.fillStyle = "#8a6a4a"; c.fillRect(-84, -50, 168, 50);
+      c.fillStyle = "#6e5238"; c.fillRect(-84, -26, 168, 4);
+      rr(c, -100, -176, 200, 128, 8); fl(c, color);
+      rr(c, -92, -168, 184, 112, 4); fl(c, "#3a6ea5");
+      c.fillStyle = "rgba(255,255,255,0.12)";
+      c.beginPath(); c.moveTo(-92, -168); c.lineTo(-20, -168); c.lineTo(-92, -90); c.closePath(); c.fill();
+      break;
+    }
+    case "door": {
+      rr(c, -62, -264, 124, 264, 4); fl(c, d2);
+      rr(c, -54, -256, 108, 256, 3); fl(c, color);
+      rr(c, -40, -238, 80, 100, 3); fl(c, d1);
+      rr(c, -40, -122, 80, 100, 3); fl(c, d1);
+      circle(c, 36, -130, 6, "#f2c94c");
+      break;
+    }
+    case "bed": {
+      c.fillStyle = "#6e5238"; c.fillRect(-150, -20, 12, 20); c.fillRect(138, -20, 12, 20);
+      rr(c, -170, -150, 24, 150, 6); fl(c, "#8a6a4a");
+      rr(c, -160, -62, 320, 44, 6); fl(c, "#8a6a4a");
+      rr(c, -150, -96, 300, 42, 14); fl(c, "#f4f1ea");
+      rr(c, -40, -104, 190, 48, 14); fl(c, color);
+      rr(c, -142, -116, 74, 30, 12); fl(c, "#ffffff");
+      break;
+    }
+    case "tree": {
+      rr(c, -16, -140, 32, 140, 6); fl(c, "#6b4a2f");
+      circle(c, 0, -216, 82, d1); circle(c, -62, -176, 60, d1); circle(c, 62, -176, 60, d1);
+      circle(c, 0, -222, 70, color); circle(c, -54, -180, 50, color); circle(c, 54, -180, 50, color);
+      break;
+    }
+    case "bench": {
+      c.fillStyle = d2; c.fillRect(-92, -60, 10, 60); c.fillRect(82, -60, 10, 60);
+      rr(c, -105, -134, 210, 14, 4); fl(c, color);
+      rr(c, -105, -112, 210, 14, 4); fl(c, color);
+      rr(c, -105, -80, 210, 16, 4); fl(c, d1);
+      c.fillStyle = d2; c.fillRect(-98, -134, 8, 60); c.fillRect(90, -134, 8, 60);
+      break;
+    }
+    case "streetlight": {
+      circle(c, 54, -318, 72, "rgba(255,236,160,0.16)");
+      rr(c, -14, -14, 28, 14, 3); fl(c, color);
+      c.fillStyle = color; c.fillRect(-4, -322, 8, 310);
+      c.strokeStyle = color; c.lineWidth = 8;
+      c.beginPath(); c.moveTo(0, -322); c.quadraticCurveTo(0, -346, 40, -340); c.stroke();
+      rr(c, 28, -342, 52, 16, 6); fl(c, "#fff3b0");
+      break;
+    }
+    case "car": {
+      rr(c, -160, -76, 320, 50, 18); fl(c, color);
+      c.beginPath(); c.moveTo(-88, -76); c.lineTo(-58, -128); c.lineTo(66, -128); c.lineTo(104, -76); c.closePath(); fl(c, color);
+      c.fillStyle = "#cfe9ff";
+      c.beginPath(); c.moveTo(-76, -80); c.lineTo(-52, -120); c.lineTo(-2, -120); c.lineTo(-2, -80); c.closePath(); c.fill();
+      c.beginPath(); c.moveTo(8, -80); c.lineTo(8, -120); c.lineTo(60, -120); c.lineTo(92, -80); c.closePath(); c.fill();
+      rr(c, 138, -66, 18, 12, 4); fl(c, "#ffe9a8");
+      rr(c, -158, -66, 12, 12, 4); fl(c, "#e45b5b");
+      rr(c, -166, -44, 332, 10, 5); fl(c, d1);
+      for (const wx of [-95, 95]) {
+        c.save(); c.translate(wx, -26);
+        c.fillStyle = "#22252d"; c.beginPath(); c.arc(0, 0, 28, 0, TAU); c.fill();
+        c.rotate(roll);
+        c.fillStyle = "#c9ccd3"; c.beginPath(); c.arc(0, 0, 14, 0, TAU); c.fill();
+        c.strokeStyle = "#22252d"; c.lineWidth = 4;
+        for (let k = 0; k < 4; k++) { c.rotate(Math.PI / 4); c.beginPath(); c.moveTo(-14, 0); c.lineTo(14, 0); c.stroke(); }
+        c.restore();
+      }
+      break;
+    }
+  }
+  c.restore();
+}
