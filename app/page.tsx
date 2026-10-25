@@ -8,7 +8,8 @@ import { listChars } from "@/lib/library";
 import { parseScript } from "@/lib/parser";
 import { PRESETS } from "@/lib/presets";
 import { PROP_LIST } from "@/lib/props";
-import { CastMember, CharacterDef, Pose, PoseBlock, PropKind, PropMember, ThemeId } from "@/lib/types";
+import type { Renderer3D } from "@/lib/render3d";
+import { CastMember, CharacterDef, Pose, PoseBlock, PropKind, PropMember, Scene, ThemeId } from "@/lib/types";
 
 const SAMPLE = `Sam: enter from the left, walk to the center and smile
 & Mina: enter from the right, run to Sam and wave
@@ -35,6 +36,10 @@ export default function Studio() {
   const cv = useRef<HTMLCanvasElement>(null);
   const raf = useRef(0);
   const timeRef = useRef(0);
+  const r3 = useRef<Renderer3D | null>(null);
+  const [mode, setMode] = useState<"2d" | "3d">("2d");
+  const [r3ready, setR3ready] = useState(false);
+  const [note3, setNote3] = useState("");
   const [cast, setCast] = useState<CastMember[]>(INITIAL);
   const [props, setProps] = useState<PropMember[]>(INITIAL_PROPS);
   const [sel, setSel] = useState(0);
@@ -64,13 +69,38 @@ export default function Studio() {
   const ctx = () => cv.current!.getContext("2d")!;
   const stop = () => cancelAnimationFrame(raf.current);
 
+  // one place that decides how a frame is drawn: 2D engine or the 3D renderer
+  const paint = (c: CanvasRenderingContext2D, sc: Scene, t: number) => {
+    if (mode === "3d" && r3.current) r3.current.render(c, sc, t, { theme, bubbles });
+    else renderFrame(c, sc, t, { bubbles, theme });
+  };
+
+  // load the 3D code only when 3D is switched on
+  useEffect(() => {
+    if (mode !== "3d" || r3.current) return;
+    let dead = false;
+    import("@/lib/render3d")
+      .then(m => {
+        if (dead) return;
+        r3.current = m.createRenderer3D();
+        setR3ready(true); setNote3("");
+      })
+      .catch(() => {
+        if (dead) return;
+        setNote3("3D could not start on this device or browser (it needs WebGL). Staying in 2D.");
+        setMode("2d");
+      });
+    return () => { dead = true; };
+  }, [mode]);
+  useEffect(() => () => { r3.current?.dispose(); }, []);
+
   useEffect(() => {
     stop();
     const t = Math.min(timeRef.current, scene.duration);
     setT(t);
-    renderFrame(ctx(), scene, t, { bubbles, theme });
+    paint(ctx(), scene, t);
     return stop;
-  }, [scene, bubbles, theme]);
+  }, [scene, bubbles, theme, mode, r3ready]);
   useEffect(() => { listChars().then(setLib); }, [tab]);
   useEffect(() => { setDraft({}); setDraftT0(null); }, [sel]);
 
@@ -79,13 +109,13 @@ export default function Studio() {
     const c = ctx(), t0 = performance.now();
     const tick = (now: number) => {
       const t = Math.min((now - t0) / 1000, scene.duration);
-      renderFrame(c, scene, t, { bubbles, theme });
+      paint(c, scene, t);
       setT(t);
       if (t < scene.duration) raf.current = requestAnimationFrame(tick); else onDone?.();
     };
     raf.current = requestAnimationFrame(tick);
   };
-  const scrub = (t: number) => { stop(); setT(t); renderFrame(ctx(), scene, t, { bubbles, theme }); };
+  const scrub = (t: number) => { stop(); setT(t); paint(ctx(), scene, t); };
 
   const exportVideo = () => {
     const mime = ["video/mp4;codecs=avc1", "video/webm;codecs=vp9", "video/webm"].find(m => MediaRecorder.isTypeSupported(m));
@@ -130,6 +160,10 @@ export default function Studio() {
     setSel(cast.length);
   };
   const addLine = (who: string) => setScript(s => `${s.trimEnd()}\n${who}: `);
+  const addOrbit = () => {
+    const who = cast[sel]?.def.name ?? cast[0]?.def.name ?? "";
+    setScript(s => `${s.trimEnd()}\nCamera: orbit around ${who} for 5 seconds`);
+  };
 
   const patchProp = (i: number, p: Partial<PropMember>) => setProps(ps => ps.map((q, k) => (k === i ? { ...q, ...p } : q)));
   const removeProp = (i: number) => setProps(ps => ps.filter((_, k) => k !== i));
@@ -177,12 +211,20 @@ export default function Studio() {
     </div>
   );
   const needActor = <p className={`${panel} text-sm text-slate-400`}>Add an actor in the Stage tab first.</p>;
+  const modeBtn = (m: "2d" | "3d", label: string) => (
+    <button key={m} onClick={() => setMode(m)}
+      className={`px-4 py-1.5 font-medium ${mode === m ? "text-white" : "text-slate-400"}`}
+      style={mode === m ? grad : undefined}>{label}</button>
+  );
 
   return (
     <div className="min-h-screen bg-[#0b0d14] text-slate-100">
       <header className="flex items-center gap-3 border-b border-white/10 px-4 py-3">
         <div className="h-8 w-8 rounded-xl" style={grad} />
-        <h1 className="text-lg font-semibold tracking-tight">ToonStage <span className="font-normal text-slate-400">director&apos;s studio</span></h1>
+        <h1 className="text-lg font-semibold tracking-tight">ToonStage <span className="hidden font-normal text-slate-400 sm:inline">director&apos;s studio</span></h1>
+        <div className="ml-auto flex overflow-hidden rounded-xl border border-white/10 text-sm">
+          {modeBtn("2d", "2D")}{modeBtn("3d", "3D")}
+        </div>
       </header>
 
       <main className="mx-auto grid max-w-6xl gap-4 p-3 lg:grid-cols-[1.4fr_1fr]">
@@ -190,6 +232,8 @@ export default function Studio() {
           <div className="overflow-hidden rounded-2xl ring-1 ring-white/10" style={{ boxShadow: "0 20px 60px rgba(139,92,246,0.18)" }}>
             <canvas ref={cv} width={W} height={H} className="block w-full bg-black" />
           </div>
+          {mode === "3d" && !r3ready && <p className="text-xs text-slate-400">Loading 3D...</p>}
+          {note3 && <p className="text-xs text-amber-400">{note3}</p>}
           <input type="range" min={0} max={scene.duration} step={0.01} value={time}
             onChange={e => scrub(+e.target.value)} className="w-full accent-violet-500" />
           <div className="flex flex-wrap items-center gap-2">
@@ -230,6 +274,7 @@ export default function Studio() {
                       className="rounded-lg border border-sky-400/30 bg-sky-500/10 px-2.5 py-1 text-xs hover:bg-sky-500/20">+ {p.name}</button>
                   ))}
                   <button onClick={() => addLine("Camera")} className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-xs hover:bg-white/10">+ Camera</button>
+                  <button onClick={addOrbit} className="rounded-lg border border-fuchsia-400/30 bg-fuchsia-500/10 px-2.5 py-1 text-xs hover:bg-fuchsia-500/20">+ 360° shot</button>
                   <button onClick={askAI} disabled={busy} style={grad}
                     className="ml-auto rounded-lg px-3 py-1 text-xs font-medium text-white disabled:opacity-50">
                     {busy ? "Thinking..." : "✨ Direct with AI"}
@@ -242,8 +287,9 @@ export default function Studio() {
                 <p>One line per actor: <span className="text-slate-200">Name: walk to Mina, smile, say &quot;Hi!&quot;</span></p>
                 <p>Chain actions with <span className="text-slate-200">then</span>. Start a line with <span className="text-slate-200">&amp;</span> to run it at the same time as the line above. <span className="text-slate-200">wait 3 seconds</span> adds a pause.</p>
                 <p>Moves: walk or <span className="text-slate-200">run</span> to a name, left, right, center · <span className="text-slate-200">enter from the left</span> · <span className="text-slate-200">walk out of the scene</span> · wave, point, shrug, jump, type on a laptop · look at a name, nod, shake head, turn around · smile, sad, angry, surprised</p>
-                <p>Props are directed like actors: <span className="text-slate-200">Car: enter from the left and stop next to Sam</span>, <span className="text-slate-200">Car: drive out of the scene to the right</span>. Prop lines run alongside the line above.</p>
+                <p>Props are directed like actors: <span className="text-slate-200">Car: enter from the left and stop next to Sam</span>. Prop and camera lines run alongside the line above.</p>
                 <p>Camera: <span className="text-slate-200">Camera: zoom in on Sam</span>, close-up, pan left or right, follow a name or prop, zoom out</p>
+                <p>360° camera (3D mode only, only when you write it): <span className="text-slate-200">Camera: orbit around Sam for 5 seconds</span>, <span className="text-slate-200">Camera: 360 for 6 seconds</span>, <span className="text-slate-200">Camera: orbit 180 degrees around Mina for 4 seconds</span>, <span className="text-slate-200">Camera: wait 3 seconds then orbit around Sam for 5 seconds</span>. Add <span className="text-slate-200">left</span> to spin the other way.</p>
               </div>
             </div>
           )}
