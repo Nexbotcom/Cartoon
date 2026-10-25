@@ -1,6 +1,5 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
-import ArtImporter from "@/components/ArtImporter";
 import Builder from "@/components/Builder";
 import PosePanel from "@/components/PosePanel";
 import Timeline from "@/components/Timeline";
@@ -8,22 +7,28 @@ import { H, THEME_LIST, W, renderFrame } from "@/lib/engine";
 import { listChars } from "@/lib/library";
 import { parseScript } from "@/lib/parser";
 import { PRESETS } from "@/lib/presets";
-import { CastMember, CharacterDef, Pose, PoseBlock, ThemeId } from "@/lib/types";
+import { PROP_LIST } from "@/lib/props";
+import { CastMember, CharacterDef, Pose, PoseBlock, PropKind, PropMember, ThemeId } from "@/lib/types";
 
-const SAMPLE = `Sam: walk to Mina and wave
-Mina: look at Sam, smile, say "Hey Sam! You are late again."
-Sam: say "Sorry! The bus was really slow." while shrugging
-Camera: close-up on Mina`;
+const SAMPLE = `Sam: enter from the left, walk to the center and smile
+& Mina: enter from the right, run to Sam and wave
+Sam: say "You made it!" then run out of the scene to the left
+Car: enter from the right and drive out of the scene to the left
+Camera: follow Sam`;
 
-type Tab = "script" | "stage" | "look" | "art" | "pose" | "timeline";
+type Tab = "script" | "stage" | "look" | "pose" | "timeline";
 const SLOTS = [380, 900, 640, 200, 1080];
 const panel = "rounded-2xl border border-white/10 bg-white/[0.03] p-3";
 const lbl = "mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400";
 const grad = { background: "linear-gradient(135deg,#8b5cf6,#ec4899)" };
+const input = "rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-sm";
 
 const INITIAL: CastMember[] = [
   { def: PRESETS[0], x: 380, depth: 0 },
   { def: PRESETS[1], x: 900, depth: 0 },
+];
+const INITIAL_PROPS: PropMember[] = [
+  { id: "prop-car", kind: "car", name: "Car", x: 640, depth: 0.5, scale: 1, color: "#d94f4f", flip: false },
 ];
 
 export default function Studio() {
@@ -31,6 +36,7 @@ export default function Studio() {
   const raf = useRef(0);
   const timeRef = useRef(0);
   const [cast, setCast] = useState<CastMember[]>(INITIAL);
+  const [props, setProps] = useState<PropMember[]>(INITIAL_PROPS);
   const [sel, setSel] = useState(0);
   const [script, setScript] = useState(SAMPLE);
   const [tab, setTab] = useState<Tab>("script");
@@ -54,10 +60,7 @@ export default function Studio() {
       i === sel ? { ...c, keys: [...(c.keys ?? []), { t0: draftT0, t1: draftT0 + draftDur, pose: draft }] } : c);
   }, [cast, tab, sel, draft, draftT0, draftDur]);
 
-  const scene = useMemo(() => parseScript(script, castLive), [script, castLive]);
-  const sceneRef = useRef(scene);
-  sceneRef.current = scene;
-
+  const scene = useMemo(() => parseScript(script, castLive, props), [script, castLive, props]);
   const ctx = () => cv.current!.getContext("2d")!;
   const stop = () => cancelAnimationFrame(raf.current);
 
@@ -70,13 +73,6 @@ export default function Studio() {
   }, [scene, bubbles, theme]);
   useEffect(() => { listChars().then(setLib); }, [tab]);
   useEffect(() => { setDraft({}); setDraftT0(null); }, [sel]);
-
-  // imported images finish loading after the first draw: repaint the current frame
-  useEffect(() => {
-    const h = () => { if (cv.current) renderFrame(ctx(), sceneRef.current, timeRef.current, { bubbles, theme }); };
-    window.addEventListener("toon-sprite", h);
-    return () => window.removeEventListener("toon-sprite", h);
-  }, [bubbles, theme]);
 
   const play = (onDone?: () => void) => {
     stop();
@@ -111,7 +107,7 @@ export default function Studio() {
     try {
       const r = await fetch("/api/direct", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: script, names: cast.map(c => c.def.name) }),
+        body: JSON.stringify({ text: script, names: [...cast.map(c => c.def.name), ...props.map(p => p.name)] }),
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || "AI request failed");
@@ -120,16 +116,31 @@ export default function Studio() {
     finally { setBusy(false); }
   };
 
+  const uniqueName = (base: string) => {
+    const used = [...cast.map(c => c.def.name), ...props.map(p => p.name)].map(s => s.toLowerCase());
+    let name = base, n = 2;
+    while (used.includes(name.toLowerCase())) name = `${base} ${n++}`;
+    return name;
+  };
+
   const patch = (i: number, p: Partial<CastMember>) => setCast(cs => cs.map((c, k) => (k === i ? { ...c, ...p } : c)));
   const remove = (i: number) => { setCast(cs => cs.filter((_, k) => k !== i)); setSel(0); };
   const addActor = (src: CharacterDef) => {
-    const used = cast.map(c => c.def.name.toLowerCase());
-    let name = src.name, n = 2;
-    while (used.includes(name.toLowerCase())) name = `${src.name} ${n++}`;
-    setCast([...cast, { def: { ...src, id: crypto.randomUUID(), name }, x: SLOTS[cast.length % SLOTS.length], depth: 0 }]);
+    setCast([...cast, { def: { ...src, id: crypto.randomUUID(), name: uniqueName(src.name) }, x: SLOTS[cast.length % SLOTS.length], depth: 0 }]);
     setSel(cast.length);
   };
   const addLine = (who: string) => setScript(s => `${s.trimEnd()}\n${who}: `);
+
+  const patchProp = (i: number, p: Partial<PropMember>) => setProps(ps => ps.map((q, k) => (k === i ? { ...q, ...p } : q)));
+  const removeProp = (i: number) => setProps(ps => ps.filter((_, k) => k !== i));
+  const addProp = (kind: PropKind) => {
+    const info = PROP_LIST.find(q => q.kind === kind);
+    if (!info) return;
+    setProps(ps => [...ps, {
+      id: crypto.randomUUID(), kind, name: uniqueName(info.label), x: SLOTS[ps.length % SLOTS.length],
+      depth: info.depth, scale: 1, color: info.color, flip: false,
+    }]);
+  };
 
   // ---- pose blocks ----
   const blocks: PoseBlock[] = cast[sel]?.keys ?? [];
@@ -200,19 +211,23 @@ export default function Studio() {
         <section className="min-w-0 space-y-3">
           <div className="flex gap-1 overflow-x-auto rounded-2xl border border-white/10 bg-white/[0.03] p-1">
             {tabBtn("script", "🎬 Script")}{tabBtn("stage", "🎭 Stage")}{tabBtn("look", "🎨 Character")}
-            {tabBtn("art", "🖼 Art")}{tabBtn("pose", "🕺 Pose")}{tabBtn("timeline", "⏱ Timeline")}
+            {tabBtn("pose", "🕺 Pose")}{tabBtn("timeline", "⏱ Timeline")}
           </div>
 
           {tab === "script" && (
             <div className="space-y-3">
               <div className={panel}>
                 <p className={lbl}>Director&apos;s script</p>
-                <textarea value={script} onChange={e => setScript(e.target.value)} rows={9} spellCheck={false}
+                <textarea value={script} onChange={e => setScript(e.target.value)} rows={10} spellCheck={false}
                   className="w-full rounded-xl border border-white/10 bg-black/30 p-3 font-mono text-sm outline-none focus:border-violet-400" />
                 <div className="mt-2 flex flex-wrap gap-2">
                   {cast.map((c, i) => (
                     <button key={i} onClick={() => addLine(c.def.name)}
                       className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-xs hover:bg-white/10">+ {c.def.name}</button>
+                  ))}
+                  {props.map((p, i) => (
+                    <button key={p.id + i} onClick={() => addLine(p.name)}
+                      className="rounded-lg border border-sky-400/30 bg-sky-500/10 px-2.5 py-1 text-xs hover:bg-sky-500/20">+ {p.name}</button>
                   ))}
                   <button onClick={() => addLine("Camera")} className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-xs hover:bg-white/10">+ Camera</button>
                   <button onClick={askAI} disabled={busy} style={grad}
@@ -225,9 +240,10 @@ export default function Studio() {
               <div className={`${panel} text-sm leading-relaxed text-slate-400`}>
                 <p className={lbl}>How to direct</p>
                 <p>One line per actor: <span className="text-slate-200">Name: walk to Mina, smile, say &quot;Hi!&quot;</span></p>
-                <p>Chain actions with <span className="text-slate-200">then</span>. Start a line with <span className="text-slate-200">&amp;</span> to run it at the same time as the line above.</p>
-                <p>Moves: walk to a name, left, right, center · wave, point, shrug, jump, type on a laptop · look at a name, nod, shake head, turn around · smile, sad, angry, surprised</p>
-                <p>Camera: <span className="text-slate-200">Camera: zoom in on Sam</span>, close-up, pan left or right, follow a name, zoom out</p>
+                <p>Chain actions with <span className="text-slate-200">then</span>. Start a line with <span className="text-slate-200">&amp;</span> to run it at the same time as the line above. <span className="text-slate-200">wait 3 seconds</span> adds a pause.</p>
+                <p>Moves: walk or <span className="text-slate-200">run</span> to a name, left, right, center · <span className="text-slate-200">enter from the left</span> · <span className="text-slate-200">walk out of the scene</span> · wave, point, shrug, jump, type on a laptop · look at a name, nod, shake head, turn around · smile, sad, angry, surprised</p>
+                <p>Props are directed like actors: <span className="text-slate-200">Car: enter from the left and stop next to Sam</span>, <span className="text-slate-200">Car: drive out of the scene to the right</span>. Prop lines run alongside the line above.</p>
+                <p>Camera: <span className="text-slate-200">Camera: zoom in on Sam</span>, close-up, pan left or right, follow a name or prop, zoom out</p>
               </div>
             </div>
           )}
@@ -245,6 +261,7 @@ export default function Studio() {
                   ))}
                 </div>
               </div>
+
               <div className={panel}>
                 <p className={lbl}>On stage ({cast.length})</p>
                 <div className="space-y-2">
@@ -252,7 +269,7 @@ export default function Studio() {
                     <div key={i} className={`rounded-xl border p-2 ${sel === i ? "border-violet-400 bg-violet-500/10" : "border-white/10 bg-white/5"}`}>
                       <div className="flex items-center gap-2">
                         <button onClick={() => setSel(i)} className="flex-1 text-left font-medium">{c.def.name}
-                          <span className="ml-2 text-xs font-normal text-slate-400">{c.def.sprite ? "imported art" : c.def.style}</span></button>
+                          <span className="ml-2 text-xs font-normal text-slate-400">{c.def.style}</span></button>
                         <button onClick={() => { setSel(i); setTab("look"); }} className="rounded-lg border border-white/10 px-2 py-1 text-xs hover:bg-white/10">Edit look</button>
                         <button onClick={() => remove(i)} className="px-2 text-red-400">✕</button>
                       </div>
@@ -266,40 +283,55 @@ export default function Studio() {
                   ))}
                   {cast.length === 0 && <p className="text-sm text-slate-500">Nobody on stage. Add an actor below.</p>}
                 </div>
-              </div>
-              <div className={panel}>
-                <p className={lbl}>Add an actor</p>
+                <p className={`${lbl} mt-3`}>Add an actor</p>
                 <div className="flex flex-wrap gap-2">
                   {PRESETS.map(p => (
                     <button key={p.id} onClick={() => addActor(p)} className="rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-sm hover:bg-white/10">+ {p.name}</button>
                   ))}
+                  {lib.map(ch => (
+                    <button key={ch.id} onClick={() => addActor(ch)} className="rounded-xl border border-violet-400/30 bg-violet-500/10 px-3 py-1.5 text-sm hover:bg-violet-500/20">+ {ch.name}</button>
+                  ))}
                 </div>
-                {lib.length > 0 && (<>
-                  <p className={`${lbl} mt-3`}>From my library</p>
-                  <div className="flex flex-wrap gap-2">
-                    {lib.map(ch => (
-                      <button key={ch.id} onClick={() => addActor(ch)} className="rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-sm hover:bg-white/10">+ {ch.name}</button>
-                    ))}
-                  </div>
-                </>)}
+              </div>
+
+              <div className={panel}>
+                <p className={lbl}>Props ({props.length})</p>
+                <div className="space-y-2">
+                  {props.map((p, i) => (
+                    <div key={p.id} className="rounded-xl border border-white/10 bg-white/5 p-2">
+                      <div className="flex items-center gap-2">
+                        <input value={p.name} onChange={e => patchProp(i, { name: e.target.value })} className={`min-w-0 flex-1 ${input}`} />
+                        <input type="color" value={p.color} onChange={e => patchProp(i, { color: e.target.value })} className="h-8 w-8 cursor-pointer rounded-lg border-0 bg-transparent" />
+                        <label className="flex items-center gap-1 text-xs text-slate-400">
+                          <input type="checkbox" checked={p.flip} onChange={e => patchProp(i, { flip: e.target.checked })} className="accent-violet-500" />flip
+                        </label>
+                        <button onClick={() => removeProp(i)} className="px-2 text-red-400">✕</button>
+                      </div>
+                      <label className="mt-2 block text-xs text-slate-400">Position
+                        <input type="range" min={-200} max={W + 200} value={p.x} onChange={e => patchProp(i, { x: +e.target.value })} className="w-full accent-violet-500" />
+                      </label>
+                      <label className="block text-xs text-slate-400">Depth (front to back)
+                        <input type="range" min={0} max={1} step={0.05} value={p.depth} onChange={e => patchProp(i, { depth: +e.target.value })} className="w-full accent-violet-500" />
+                      </label>
+                      <label className="block text-xs text-slate-400">Size
+                        <input type="range" min={0.5} max={2} step={0.05} value={p.scale} onChange={e => patchProp(i, { scale: +e.target.value })} className="w-full accent-violet-500" />
+                      </label>
+                    </div>
+                  ))}
+                  {props.length === 0 && <p className="text-sm text-slate-500">No props yet.</p>}
+                </div>
+                <p className={`${lbl} mt-3`}>Add a prop</p>
+                <div className="flex flex-wrap gap-2">
+                  {PROP_LIST.map(k => (
+                    <button key={k.kind} onClick={() => addProp(k.kind)} className="rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-sm hover:bg-white/10">+ {k.label}</button>
+                  ))}
+                </div>
               </div>
             </div>
           )}
 
           {tab === "look" && (cast[sel]
             ? (<>{actorChips}<Builder def={cast[sel].def} setDef={d => patch(sel, { def: d })} /></>)
-            : needActor)}
-
-          {tab === "art" && (cast[sel]
-            ? (<>
-                {actorChips}
-                <ArtImporter
-                  name={cast[sel].def.name}
-                  hasArt={!!cast[sel].def.sprite}
-                  onApply={pack => patch(sel, { def: { ...cast[sel].def, sprite: pack } })}
-                  onRemove={() => { const d = { ...cast[sel].def }; delete d.sprite; patch(sel, { def: d }); }}
-                />
-              </>)
             : needActor)}
 
           {tab === "pose" && (cast[sel]
@@ -321,7 +353,7 @@ export default function Studio() {
               </div>
               <Timeline scene={scene} time={time} onSeek={scrub} pps={pps} />
               <p className="mt-2 text-xs text-slate-500">
-                Drag on the timeline to scrub. Blue = walking, pink = talking, amber = gestures and expressions, violet = manual poses, sky = camera.
+                Drag on the timeline to scrub. Blue = walking and running, pink = talking, amber = gestures and expressions, violet = manual poses, sky = camera.
               </p>
             </div>
           )}
