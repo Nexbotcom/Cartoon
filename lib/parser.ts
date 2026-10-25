@@ -27,6 +27,16 @@ const cl = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 const edge = (left: boolean) => (left ? -260 : W + 260);
 const hasName = (l: string, n: string) => new RegExp("\\b" + esc(n.toLowerCase()) + "\\b").test(l);
 
+// split a line into steps on "then" / ";" but never inside quoted dialogue
+const splitSegs = (body: string) => {
+  const quotes: string[] = [];
+  const masked = body.replace(/"[^"]*"/g, q => { quotes.push(q); return `\u0000${quotes.length - 1}\u0000`; });
+  return masked
+    .split(/\bthen\b|\bafter that\b|;/i)
+    .map(s => s.replace(/\u0000(\d+)\u0000/g, (_m, i: string) => quotes[+i]).trim())
+    .filter(Boolean);
+};
+
 export function parseScript(raw: string, cast: CastMember[], propList: PropMember[] = []): Scene {
   const text = raw.replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
   const actors: Actor[] = cast.map(m => ({ def: m.def, x: m.x, depth: m.depth, actions: [], keys: m.keys ?? [] }));
@@ -209,13 +219,12 @@ export function parseScript(raw: string, cast: CastMember[], propList: PropMembe
       }
     }
     if (!isCam && who < 0 && pwho < 0) { if (!actors.length) continue; who = 0; }
-    if (/\b(meanwhile|at the same time|simultaneously)\b/i.test(body)) parallel = true;
-
+    if (/\b(meanwhile|at the same time|simultaneously)\b/i.test(body.replace(/"[^"]*"/g, " "))) parallel = true;
     const free = isCam || pwho >= 0;   // camera and prop lines run alongside the previous line
     const start = parallel || free ? prevStart : beatEnd;
     if (!parallel && !free) prevStart = start;
     let tl = start;
-    for (const seg of body.split(/\bthen\b|\bafter that\b|;/i).map(s => s.trim()).filter(Boolean)) {
+    for (const seg of splitSegs(body)) {
       const wm = seg.match(/^(?:wait|pause|hold)\D*(\d+(?:\.\d+)?)/i);
       if (wm) { tl += +wm[1]; continue; }
       tl = isCam ? camSeg(seg, tl) : pwho >= 0 ? propSeg(pwho, seg, tl) : actorSeg(who, seg, tl);
