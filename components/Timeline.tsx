@@ -2,7 +2,7 @@
 import { Action, Scene } from "@/lib/types";
 
 const CLIP_COL: Record<string, string> = {
-  walk: "#3b82f6", talk: "#ec4899", wave: "#f59e0b", type: "#10b981",
+  walk: "#3b82f6", run: "#2563eb", talk: "#ec4899", wave: "#f59e0b", type: "#10b981",
   jump: "#ef4444", point: "#14b8a6", shrug: "#a78bfa", idle: "#64748b",
 };
 const colorOf = (a: Action) => (a.clip ? CLIP_COL[a.clip] : a.say ? CLIP_COL.talk : a.expr ? "#f59e0b" : "#64748b");
