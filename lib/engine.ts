@@ -75,6 +75,7 @@ export function actorState(s: Scene, a: Actor, t: number) {
     ex = lerp(prev.ex, cur.ex, w); ey = lerp(prev.ey, cur.ey, w);
     if (!moving && cur.ex !== 0 && cur.ey === 0) face = cur.ex > 0 ? 1 : -1;
   }
+  const lookEx = ex;
   for (const q of act) {
     const u = (t - q.t0) / Math.max(0.01, q.t1 - q.t0), env = Math.sin(Math.PI * cl(u, 0, 1));
     if (q.nod) pitch += Math.sin(t * 8) * 9 * env;
@@ -100,7 +101,7 @@ export function actorState(s: Scene, a: Actor, t: number) {
 
   const side = moving || clip === "walk" || clip === "run";
   const view: View = clip === "type" ? "front" : side ? "side" : viewA ?? "front";
-  return { x: pos.x, face, view, clip, expr, say, pose };
+  return { x: pos.x, face, view, clip, expr, say, pose, lookEx };
 }
 
 const entity = (s: Scene, i: number | undefined): Mover | undefined =>
@@ -186,7 +187,7 @@ function layer(c: CanvasRenderingContext2D, L: Layer, cam: { x: number; y: numbe
   body?.(); c.restore();
 }
 
-function drawBubble(c: CanvasRenderingContext2D, text: string, x: number, y: number) {
+export function drawBubble(c: CanvasRenderingContext2D, text: string, x: number, y: number) {
   c.save();
   c.font = "600 24px system-ui, sans-serif"; c.textAlign = "center"; c.textBaseline = "middle";
   const maxW = 320, lines: string[] = []; let cur = "";
