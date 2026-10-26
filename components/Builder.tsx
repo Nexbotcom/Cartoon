@@ -13,7 +13,10 @@ const SKINS = ["#fde0c5", "#f2c9a0", "#e7b88f", "#c68a5c", "#9a6b4b", "#6f4a2f",
 const box = "rounded-2xl border border-white/10 bg-white/[0.03] p-3";
 const head = "mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400";
 
-export default function Builder({ def, setDef }: { def: CharacterDef; setDef: (d: CharacterDef) => void }) {
+export default function Builder({ def, setDef, voices = [], voiceNote = "", onTestVoice }: {
+  def: CharacterDef; setDef: (d: CharacterDef) => void;
+  voices?: string[]; voiceNote?: string; onTestVoice?: (d: CharacterDef) => void;
+}) {
   const [lib, setLib] = useState<CharacterDef[]>([]);
   useEffect(() => { listChars().then(setLib); }, []);
   const up = (p: Partial<CharacterDef>) => setDef({ ...def, ...p });
@@ -54,7 +57,19 @@ export default function Builder({ def, setDef }: { def: CharacterDef; setDef: (d
       <div className={box}>
         <p className={head}>Name (used in the script)</p>
         <input value={def.name} onChange={e => up({ name: e.target.value })}
-          className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-slate-100 outline-none focus:border-violet-400" />
+        className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-slate-100 outline-none focus:border-violet-400" />
+        <p className={`${head} mt-3`}>Voice</p>
+        <div className="flex gap-2">
+          <select value={def.voice ?? ""} onChange={e => up({ voice: e.target.value || undefined })}
+            className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-slate-100">
+            <option value="">Auto (the voice named like this character)</option>
+            {voices.map(v => <option key={v} value={v}>{v}</option>)}
+          </select>
+          {onTestVoice && (
+            <button onClick={() => onTestVoice(def)} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm hover:bg-white/10">▶ Test</button>
+          )}
+        </div>
+        {voices.length === 0 && voiceNote && <p className="mt-1 text-xs text-amber-400">{voiceNote}</p>}
       </div>
 
       <div className={box}>
