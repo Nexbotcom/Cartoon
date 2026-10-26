@@ -52,7 +52,10 @@ const splitSegs = (body: string) => {
     .filter(Boolean);
 };
 
-export function parseScript(raw: string, cast: CastMember[], propList: PropMember[] = []): Scene {
+export function parseScript(
+  raw: string, cast: CastMember[], propList: PropMember[] = [],
+  durOf?: (who: number, text: string) => number | undefined
+): Scene {
   const text = raw.replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
   const actors: Actor[] = cast.map(m => ({ def: m.def, x: m.x, depth: m.depth, actions: [], keys: m.keys ?? [] }));
   const props: SceneProp[] = propList.map(p => ({ ...p, actions: [], holds: [] }));
@@ -142,6 +145,12 @@ export function parseScript(raw: string, cast: CastMember[], propList: PropMembe
     const carHit = propHits.find(i => props[i].kind === "car");
     const doorHit = propHits.find(i => props[i].kind === "door");
     const run = RUN.test(l);
+    const sayLen = (s?: string) => {
+      if (!s) return 0;
+      const d = durOf?.(who, s);
+      return d !== undefined ? d + 0.3 : sayTime(s);
+    };
+    const sayKnown = !!say && durOf?.(who, say) !== undefined;
 
     let look: string | undefined;
     const lm = l.match(/\b(?:look|looks|looking|glance|glances|stare|stares|turn|turns|turning|face|faces|facing)\s+(?:at|to|toward|towards)?\s*(?:the\s+)?([a-z]+)/);
@@ -188,7 +197,7 @@ export function parseScript(raw: string, cast: CastMember[], propList: PropMembe
       if (leaving) {
         t = leaveSeat(who, t);
         if (say) {
-          const gd = Math.max(sayTime(say), 2.4);
+          const gd = Math.max(sayLen(say), sayKnown ? 0.8 : 2.4);
           me.actions.push({ t0: t, t1: t + gd, clip: "talk", say, expr, look, view });
           t += gd; say = undefined;
         }
@@ -277,7 +286,7 @@ export function parseScript(raw: string, cast: CastMember[], propList: PropMembe
     const parallelWalk = /\bwhile\b|\bas (he|she|they|it)\b|\bwalking\b|\brunning\b/.test(l);
     const talkWord = !!say || /talk|speak|chat|explain|tell/.test(l);
     const gesture: ClipId | undefined = other ?? (talkWord ? "talk" : undefined);
-    const sayDur = sayTime(say);
+    const sayDur = sayLen(say);
     const something = walk || !!say || !!other || nod || shake || !!expr || !!look || !!view;
     if (!something && t !== t0) return t;
 
@@ -312,7 +321,7 @@ export function parseScript(raw: string, cast: CastMember[], propList: PropMembe
       const mv = { moveTo: tx, fromX, toDepth: wd, enter: enter || undefined, exit: exit || undefined };
 
       if (gesture && !parallelWalk) {
-        const gd = base || Math.max(sayDur, gesture === "talk" ? 2.5 : 2.2, nod || shake ? 1.3 : 0);
+        const gd = base || Math.max(sayDur, gesture === "talk" ? (sayKnown ? 0.8 : 2.5) : (sayKnown ? 1.6 : 2.2), nod || shake ? 1.3 : 0);
         if (exit && !enter) {
           me.actions.push({ t0: t, t1: t + gd, clip: gesture, say, expr, look, view, nod, shake });
           me.actions.push({ t0: t + gd, t1: t + gd + walkDur, clip: gait, ...mv });
@@ -327,7 +336,7 @@ export function parseScript(raw: string, cast: CastMember[], propList: PropMembe
       return t + dur;
     }
 
-    const dur = base || Math.max(sayDur, other ? 2.4 : 0, nod || shake ? 1.3 : 0, 1.5);
+    const dur = base || Math.max(sayDur, other ? (sayKnown ? 1.6 : 2.4) : 0, nod || shake ? 1.3 : 0, sayKnown ? 0.6 : 1.5);
     me.actions.push({ t0: t, t1: t + dur, clip: gesture, say, expr, look, view, nod, shake });
     return t + dur;
   };
