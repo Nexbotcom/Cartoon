@@ -1,4 +1,4 @@
-import { Action, Actor, ClipId, Pose, Scene, ThemeId, View } from "./types";
+import { Action, Actor, ClipId, Pose, Scene, SceneProp, ThemeId, View } from "./types";
 import { BASE, clips, drawActor } from "./draw";
 import { drawProp } from "./props";
 
@@ -8,29 +8,65 @@ const lerp = (a: number, b: number, u: number) => a + (b - a) * u;
 const cl = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 const rnd = (i: number, k: number) => { const s = Math.sin(i * 127.1 + k * 311.7) * 43758.5; return s - Math.floor(s); };
 
-type Mover = { x: number; actions: Action[]; startHidden?: boolean };
+type Mover = { x: number; depth: number; actions: Action[]; startHidden?: boolean };
+export interface PosInfo { x: number; face: number; moving: boolean; depth: number; lift: number }
 
-export function posAt(a: Mover, t: number) {
-  let x = a.x, face = 1, moving = false;
+export function posAt(a: Mover, t: number, props: SceneProp[] = []): PosInfo {
+  let x = a.x, d = a.depth, lift = 0, face = 1;
   for (const m of a.actions) {
+    if (m.ride !== undefined) {                       // riding inside a prop (a car): follow it
+      if (t < m.t0) break;
+      const pr = props[m.ride];
+      if (!pr) continue;
+      const pp = posAt(pr, Math.min(t, m.t1), props);
+      x = pp.x; d = pp.depth; face = pp.face;
+      if (t < m.t1) return { x, face, moving: pp.moving, depth: d, lift: 0 };
+      continue;
+    }
     if (m.moveTo === undefined) continue;
     if (t < m.t0) break;
     if (m.fromX !== undefined) x = m.fromX;
+    if (m.fromDepth !== undefined) d = m.fromDepth;
     const u = t >= m.t1 ? 1 : (t - m.t0) / Math.max(0.01, m.t1 - m.t0);
+    const e = sm(u);
     if (m.moveTo !== x) face = m.moveTo > x ? 1 : -1;
-    if (u < 1) { x = lerp(x, m.moveTo, sm(u)); moving = true; break; }
-    x = m.moveTo;
+    const nd = m.toDepth !== undefined ? lerp(d, m.toDepth, e) : d;
+    const nl = m.lift !== undefined ? lerp(lift, m.lift, e) : lift;
+    if (u < 1) return { x: lerp(x, m.moveTo, e), face, moving: true, depth: nd, lift: nl };
+    x = m.moveTo; d = nd; lift = nl;
   }
-  return { x, face, moving };
+  return { x, face, moving: false, depth: d, lift };
 }
 
 export function visibleAt(a: Mover, t: number) {
+  for (const q of a.actions) if (q.ride !== undefined && t >= q.t0 && t < q.t1) return false;
   let v = !a.startHidden;
   for (const q of a.actions) {
     if (q.enter && t >= q.t0) v = true;
     if (q.exit && t >= q.t1) v = false;
   }
   return v;
+}
+
+export function openAt(p: { actions: Action[] }, t: number) {
+  let o = 0;
+  for (const q of p.actions) {
+    if (!q.open) continue;
+    o = Math.max(o, sm(cl((t - q.t0) / 0.35, 0, 1)) * (1 - sm(cl((t - (q.t1 - 0.35)) / 0.35, 0, 1))));
+  }
+  return o;
+}
+
+export function sitAt(a: { actions: Action[] }, t: number) {
+  let last: Action | undefined, anySit = false;
+  for (const q of a.actions) {
+    if (q.t0 > t) continue;
+    if (q.posture === "sit") anySit = true;
+    if (q.posture !== undefined) last = q;
+  }
+  if (!last || !anySit) return 0;
+  const u = sm(cl((t - last.t0) / 0.5, 0, 1));
+  return last.posture === "sit" ? u : 1 - u;
 }
 
 function lookVec(s: Scene, look: string, from: number, t: number) {
@@ -43,12 +79,13 @@ function lookVec(s: Scene, look: string, from: number, t: number) {
   const lc = look.toLowerCase();
   const tg: Mover | undefined = s.actors.find(q => q.def.name.toLowerCase() === lc) ?? s.props.find(q => q.name.toLowerCase() === lc);
   if (!tg) return z;
-  const dx = posAt(tg, t).x - from;
+  const dx = posAt(tg, t, s.props).x - from;
   return { yaw: cl(dx / 8, -38, 38), pitch: 0, ex: cl(dx / 120, -1, 1), ey: 0 };
 }
 
 export function actorState(s: Scene, a: Actor, t: number) {
-  const pos = posAt(a, t);
+  const ai = s.actors.indexOf(a);
+  const pos = posAt(a, t, s.props);
   const done = a.actions.filter(q => q.t0 <= t);
   const act = a.actions.filter(q => t >= q.t0 && t < q.t1);
   const lastOf = (f: (q: Action) => boolean) => [...done].reverse().find(f);
@@ -63,6 +100,21 @@ export function actorState(s: Scene, a: Actor, t: number) {
   let pose: Pose = { ...BASE, ...clips.idle(t) };
   if (gait) pose = { ...pose, ...clips[gait](t) };
   if (clip !== "walk" && clip !== "run" && clip !== "idle") pose = { ...pose, ...clips[clip](t) };
+
+  // sitting
+  const sit = moving ? 0 : sitAt(a, t);
+  if (sit > 0) {
+    pose.sit = sit;
+    for (const k of ["lLU", "lRU", "lLB", "lRB"] as const) pose[k] = lerp(pose[k], 90, sit);
+  }
+
+  // carrying something: both arms hold it in front
+  const holding = ai >= 0 && s.props.some(p => p.holds.some(h => h.by === ai && t >= h.t0 && t < h.t1));
+  const sideNow = moving || clip === "walk" || clip === "run";
+  if (holding) {
+    if (sideNow) { pose.aLU = 52; pose.aRU = 52; pose.aLB = 65; pose.aRB = 65; }
+    else { pose.aLU = 32; pose.aRU = 32; pose.aLB = -55; pose.aRB = -55; }
+  }
 
   let yaw = pose.yaw, pitch = pose.pitch, ex = 0, ey = 0, face = pos.face;
   if (lookA) {
@@ -99,9 +151,24 @@ export function actorState(s: Scene, a: Actor, t: number) {
     }
   }
 
-  const side = moving || clip === "walk" || clip === "run";
-  const view: View = clip === "type" ? "front" : side ? "side" : viewA ?? "front";
-  return { x: pos.x, face, view, clip, expr, say, pose, lookEx, moving };
+  const view: View = clip === "type" ? "front" : sideNow ? "side" : viewA ?? "front";
+  return { x: pos.x, depth: pos.depth, face, view, clip, expr, say, pose, lookEx, moving, holding };
+}
+
+// where a prop is right now (it follows whoever is carrying it)
+export function propPlace(s: Scene, p: SceneProp, t: number) {
+  const h = p.holds.find(q => t >= q.t0 && t < q.t1);
+  const a = h ? s.actors[h.by] : undefined;
+  if (h && a) {
+    const pa = posAt(a, t, s.props);
+    const sit = pa.moving ? 0 : sitAt(a, t);
+    return {
+      x: pa.x + (pa.moving ? pa.face * a.def.height * 0.2 : 0), depth: pa.depth - 0.002,
+      lift: a.def.height * (0.4 - sit * 0.23), face: pa.face, moving: false, held: true, by: h.by, open: 0,
+    };
+  }
+  const pp = posAt(p, t, s.props);
+  return { x: pp.x, depth: pp.depth, lift: pp.lift, face: pp.face, moving: pp.moving, held: false, by: -1, open: openAt(p, t) };
 }
 
 const entity = (s: Scene, i: number | undefined): Mover | undefined =>
@@ -113,7 +180,7 @@ export function camAt(s: Scene, t: number) {
   const a = k[i], b = k[i + 1] ?? a;
   const u = b.t === a.t ? 1 : sm(cl((t - a.t) / (b.t - a.t), 0, 1));
   const fa = entity(s, a.follow), fb = entity(s, b.follow);
-  const x = fb && fa === fb ? posAt(fb, t).x : lerp(a.x, fb ? posAt(fb, t).x : b.x, u);
+  const x = fb && fa === fb ? posAt(fb, t, s.props).x : lerp(a.x, fb ? posAt(fb, t, s.props).x : b.x, u);
   return { x, y: lerp(a.y, b.y, u), zoom: lerp(a.zoom, b.zoom, u) };
 }
 
@@ -152,6 +219,52 @@ const roomL: Layer = { speed: 0.6, tile: 420, draw: (c, i) => {
   }
   c.fillStyle = "#cfc2ae"; c.fillRect(x, GROUND - 14, 421, 14); } };
 
+const crowdCols = ["#e63946", "#f4a261", "#2a9d8f", "#457b9d", "#e9c46a", "#f1faee", "#8338ec", "#ff7aa2"];
+const standsL: Layer = { speed: 0.3, tile: 320, draw: (c, i) => {
+  const x0 = i * 320;
+  c.fillStyle = "#6f7586"; c.fillRect(x0, GROUND - 200, 321, 200);
+  c.fillStyle = "#5a6072";
+  for (let r = 0; r < 6; r++) c.fillRect(x0, GROUND - 190 + r * 31, 321, 4);
+  for (let r = 0; r < 6; r++) for (let k = 0; k < 19; k++) {
+    const cx = x0 + 10 + k * 16.5 + (r % 2) * 7, cy = GROUND - 176 + r * 31;
+    c.fillStyle = crowdCols[Math.floor(rnd(i * 31 + r, k) * crowdCols.length)];
+    c.fillRect(cx - 5, cy + 2, 10, 11);
+    c.fillStyle = rnd(i * 17 + r, k + 3) > 0.5 ? "#f2c9a0" : "#8a5a3a";
+    c.beginPath(); c.arc(cx, cy - 2, 5, 0, 7); c.fill();
+  }
+  c.fillStyle = "#4a4f5e"; c.fillRect(x0, GROUND - 206, 321, 8); } };
+const boardsL: Layer = { speed: 0.8, tile: 200, draw: (c, i) => {
+  const cs = ["#2f6fdc", "#e63946", "#f4a261", "#2a9d8f"];
+  c.fillStyle = cs[((i % 4) + 4) % 4]; c.fillRect(i * 200, GROUND - 44, 201, 36);
+  c.fillStyle = "rgba(255,255,255,0.85)"; c.fillRect(i * 200 + 20, GROUND - 30, 90, 8); } };
+const pitchGround: Layer = { speed: 1, tile: 200, draw: (c, i) => {
+  c.fillStyle = ((i % 2) + 2) % 2 === 0 ? "#3f9a4a" : "#47a652"; c.fillRect(i * 200, GROUND, 201, 700);
+  c.fillStyle = "rgba(255,255,255,0.85)"; c.fillRect(i * 200, GROUND + 150, 201, 5); } };
+
+const schoolL: Layer = { speed: 0.5, tile: 760, draw: (c, i) => {
+  const x = i * 760;
+  c.fillStyle = "#d9a15f"; c.fillRect(x + 20, GROUND - 270, 720, 270);
+  c.fillStyle = "#9b4d3a"; c.fillRect(x + 4, GROUND - 304, 752, 36);
+  c.fillStyle = "#f4f1ea";
+  for (let r = 0; r < 2; r++) for (let q = 0; q < 7; q++) { if (q === 3) continue; c.fillRect(x + 50 + q * 98, GROUND - 235 + r * 100, 58, 70); }
+  c.fillStyle = "#7a5c3e"; c.fillRect(x + 340, GROUND - 110, 90, 110);
+  c.fillStyle = "#2f4f6f"; c.fillRect(x + 300, GROUND - 262, 170, 34);
+  c.fillStyle = "#ffffff"; c.font = "700 22px system-ui, sans-serif"; c.textAlign = "center";
+  c.fillText("SCHOOL", x + 385, GROUND - 238);
+  c.fillStyle = "#6e5238"; c.fillRect(x + 640, GROUND - 400, 6, 130);
+  c.fillStyle = "#e63946"; c.fillRect(x + 646, GROUND - 400, 46, 28); } };
+
+const hospitalL: Layer = { speed: 0.5, tile: 820, draw: (c, i) => {
+  const x = i * 820;
+  c.fillStyle = "#eef3f8"; c.fillRect(x + 30, GROUND - 330, 760, 330);
+  c.fillStyle = "#cfd8e3"; c.fillRect(x + 30, GROUND - 342, 760, 14);
+  c.fillStyle = "#9ec9e8";
+  for (let r = 0; r < 3; r++) for (let q = 0; q < 8; q++) { if (q >= 3 && q <= 4 && r === 2) continue; c.fillRect(x + 60 + q * 90, GROUND - 300 + r * 85, 54, 56); }
+  c.fillStyle = "#6c8aa8"; c.fillRect(x + 330, GROUND - 120, 160, 120);
+  c.fillStyle = "#cfe7f7"; c.fillRect(x + 340, GROUND - 110, 66, 110); c.fillRect(x + 414, GROUND - 110, 66, 110);
+  c.fillStyle = "#ffffff"; c.fillRect(x + 360, GROUND - 450, 100, 108);
+  c.fillStyle = "#d62839"; c.fillRect(x + 395, GROUND - 440, 30, 88); c.fillRect(x + 366, GROUND - 411, 88, 30); } };
+
 const groundL = (color: string, stripe: string, planks = false): Layer => ({ speed: 1, tile: 200, draw: (c, i) => {
   c.fillStyle = color; c.fillRect(i * 200, GROUND, 201, 700);
   c.fillStyle = stripe;
@@ -165,11 +278,14 @@ const fgL = (color: string): Layer => ({ speed: 1.6, tile: 500, draw: (c, i) => 
 interface ThemeDef { sky: string[]; far: Layer | null; mid: Layer; ground: Layer; fg: Layer | null; sun?: { x: number; y: number; r: number; c: string }; stars?: boolean }
 
 const THEMES: Record<ThemeId, ThemeDef> = {
-  day:    { sky: ["#8fd0ff", "#eef8ff"], far: hillsL("#c9ddd0"), mid: cityL("#b3bfd3", "#e6ecf7"), ground: groundL("#9bc58a", "#86b277"), fg: fgL("#4d8a4f"), sun: { x: 1060, y: 110, r: 46, c: "#fff3b0" } },
-  sunset: { sky: ["#2d1f5e", "#d9577a", "#ffb36b"], far: hillsL("#6b3f7a"), mid: cityL("#4a2f66", "#7a5588"), ground: groundL("#5a6b4a", "#4c5c3e"), fg: fgL("#2f3d2f"), sun: { x: 300, y: 400, r: 70, c: "#ffd29a" } },
-  night:  { sky: ["#0b1030", "#1b2a5c"], far: hillsL("#1b2748"), mid: cityL("#202b4d", "#2d3a63", true), ground: groundL("#27413a", "#1f342f"), fg: fgL("#12261f"), sun: { x: 1000, y: 100, r: 38, c: "#f4f1d8" }, stars: true },
-  park:   { sky: ["#9fdcff", "#f4fbff"], far: hillsL("#a8d5a2"), mid: treesL("#4f9a52", "#3f8a49"), ground: groundL("#8fd07a", "#7bbd68"), fg: fgL("#3f8a49"), sun: { x: 180, y: 110, r: 44, c: "#fff3b0" } },
-  room:   { sky: ["#eadfce", "#d9ccb8"], far: null, mid: roomL, ground: groundL("#b98c5e", "#a67a50", true), fg: null },
+  day:      { sky: ["#8fd0ff", "#eef8ff"], far: hillsL("#c9ddd0"), mid: cityL("#b3bfd3", "#e6ecf7"), ground: groundL("#9bc58a", "#86b277"), fg: fgL("#4d8a4f"), sun: { x: 1060, y: 110, r: 46, c: "#fff3b0" } },
+  sunset:   { sky: ["#2d1f5e", "#d9577a", "#ffb36b"], far: hillsL("#6b3f7a"), mid: cityL("#4a2f66", "#7a5588"), ground: groundL("#5a6b4a", "#4c5c3e"), fg: fgL("#2f3d2f"), sun: { x: 300, y: 400, r: 70, c: "#ffd29a" } },
+  night:    { sky: ["#0b1030", "#1b2a5c"], far: hillsL("#1b2748"), mid: cityL("#202b4d", "#2d3a63", true), ground: groundL("#27413a", "#1f342f"), fg: fgL("#12261f"), sun: { x: 1000, y: 100, r: 38, c: "#f4f1d8" }, stars: true },
+  park:     { sky: ["#9fdcff", "#f4fbff"], far: hillsL("#a8d5a2"), mid: treesL("#4f9a52", "#3f8a49"), ground: groundL("#8fd07a", "#7bbd68"), fg: fgL("#3f8a49"), sun: { x: 180, y: 110, r: 44, c: "#fff3b0" } },
+  room:     { sky: ["#eadfce", "#d9ccb8"], far: null, mid: roomL, ground: groundL("#b98c5e", "#a67a50", true), fg: null },
+  pitch:    { sky: ["#7ec8ff", "#eaf6ff"], far: standsL, mid: boardsL, ground: pitchGround, fg: null, sun: { x: 1100, y: 100, r: 40, c: "#fff3b0" } },
+  school:   { sky: ["#8fd0ff", "#eef8ff"], far: hillsL("#c9ddd0"), mid: schoolL, ground: groundL("#8e949c", "#7b818a"), fg: fgL("#4d8a4f"), sun: { x: 1120, y: 100, r: 42, c: "#fff3b0" } },
+  hospital: { sky: ["#a9d8ff", "#f4fbff"], far: hillsL("#d3e4d8"), mid: hospitalL, ground: groundL("#c9ced6", "#b4bac4"), fg: fgL("#5aa85d"), sun: { x: 1100, y: 100, r: 40, c: "#fff3b0" } },
 };
 
 export const THEME_LIST: { id: ThemeId; label: string; swatch: string }[] = [
@@ -178,6 +294,9 @@ export const THEME_LIST: { id: ThemeId; label: string; swatch: string }[] = [
   { id: "night", label: "Night", swatch: "linear-gradient(#0b1030,#27413a)" },
   { id: "park", label: "Park", swatch: "linear-gradient(#9fdcff,#8fd07a)" },
   { id: "room", label: "Room", swatch: "linear-gradient(#eadfce,#b98c5e)" },
+  { id: "pitch", label: "Pitch", swatch: "linear-gradient(#7ec8ff,#3f9a4a)" },
+  { id: "school", label: "School", swatch: "linear-gradient(#8fd0ff,#d9a15f)" },
+  { id: "hospital", label: "Hospital", swatch: "linear-gradient(#a9d8ff,#eef3f8)" },
 ];
 
 function layer(c: CanvasRenderingContext2D, L: Layer, cam: { x: number; y: number; zoom: number }, body?: () => void) {
@@ -231,18 +350,22 @@ export function renderFrame(c: CanvasRenderingContext2D, s: Scene, t: number, op
     const items: { depth: number; order: number; draw: () => void }[] = [];
     const talkers: { x: number; y: number; say: string }[] = [];
 
-    for (const p of s.props) {
-      if (!visibleAt(p, t)) continue;
-      const ps = posAt(p, t);
-      const sc = (1 - p.depth * 0.22) * p.scale;
-      const mirror = (p.flip ? -1 : 1) * (p.kind === "car" ? ps.face : 1);
-      items.push({ depth: p.depth, order: 0, draw: () => drawProp(c, p.kind, p.color, ps.x, FOOT - p.depth * 70, sc, mirror, ps.x / 28) });
-    }
+    s.props.forEach((p, pi) => {
+      if (!visibleAt(p, t)) return;
+      const pl = propPlace(s, p, t);
+      const pers = 1 - pl.depth * 0.22, sc = pers * p.scale;
+      const mirror = (p.flip ? -1 : 1) * (p.kind === "car" ? pl.face : 1);
+      const riders = s.actors
+        .filter(a => a.actions.some(q => q.ride === pi && t >= q.t0 && t < q.t1))
+        .map(a => ({ skin: a.def.skin, hair: a.def.hair }));
+      items.push({ depth: pl.depth, order: 0, draw: () =>
+        drawProp(c, p.kind, p.color, pl.x, FOOT - pl.depth * 70 - pl.lift * pers, sc, mirror, pl.x / 28, { open: pl.open, riders }) });
+    });
     for (const a of s.actors) {
       if (!visibleAt(a, t)) continue;
       const st = actorState(s, a, t);
-      const fy = FOOT - a.depth * 70, sc = 1 - a.depth * 0.22;
-      items.push({ depth: a.depth, order: 1, draw: () => drawActor(c, a.def, st.pose, st.expr, st.x, fy, sc,
+      const fy = FOOT - st.depth * 70, sc = 1 - st.depth * 0.22;
+      items.push({ depth: st.depth, order: 1, draw: () => drawActor(c, a.def, st.pose, st.expr, st.x, fy, sc,
         { view: st.view, face: st.face, seed: Math.floor(t * 8), prop: st.clip === "type" ? "laptop" : undefined }) });
       if (st.say) talkers.push({ x: st.x, y: fy - a.def.height * sc * 1.02 - 10, say: st.say });
     }
