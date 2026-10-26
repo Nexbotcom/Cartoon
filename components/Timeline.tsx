@@ -7,7 +7,7 @@ const CLIP_COL: Record<string, string> = {
 };
 const colorOf = (a: Action) => (a.clip ? CLIP_COL[a.clip] : a.say ? CLIP_COL.talk : a.expr ? "#f59e0b" : "#64748b");
 const labelOf = (a: Action) =>
-  a.say ? `“${a.say}”` : a.clip ?? a.expr ?? (a.look ? `look ${a.look}` : a.nod ? "nod" : a.shake ? "shake" : a.view ?? "");
+  a.say ? `“${a.say}”` : a.clip ?? a.expr ?? (a.look ? `look ${a.look}` : a.nod ? "nod" : a.shake ? "shake" : a.view ?? a.posture ?? (a.ride !== undefined ? "in car" : ""));
 
 const RULER = 26, LANE = 52, CAM = 34;
 
