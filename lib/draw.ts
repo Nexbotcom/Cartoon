@@ -10,7 +10,7 @@ const dk = (h: string, f: number) => {
 
 export const BASE: Pose = {
   aLU: 6, aLB: 8, aRU: 6, aRB: 8, lLU: 3, lLB: 0, lRU: 3, lRB: 0,
-  yaw: 0, pitch: 0, tilt: 0, lean: 0, bob: 0, mouth: 0, blink: 0, eyeX: 0, eyeY: 0,
+  yaw: 0, pitch: 0, tilt: 0, lean: 0, bob: 0, mouth: 0, blink: 0, eyeX: 0, eyeY: 0, sit: 0,
 };
 
 // Angles: 0 = hanging down, positive = outward (front view) or forward (side view).
@@ -82,7 +82,7 @@ export function drawActor(
   c.scale(scale * mir, scale);
   c.fillStyle = "rgba(0,0,0,0.16)";
   c.beginPath(); c.ellipse(0, 0, H * 0.2, H * 0.03, 0, 0, TAU); c.fill();
-  c.translate(0, p.bob);
+  c.translate(0, p.bob + p.sit * Lg * 0.5);
   c.lineCap = "round"; c.lineJoin = "round";
 
   // ---------- drawing helpers ----------
@@ -123,8 +123,9 @@ export function drawActor(
     const rT = limb * 0.64, rA = limb * 0.42;
     const hx0 = front && !L.stick ? side * hw * 0.5 : 0;
     if (front) {
-      const [dx, dy] = v2(side, aU);
-      const fx = hx0 + dx * Lg * 0.98, fy = hipY + dy * Lg * 0.98 - aB * H * 0.004;
+      const sk = 1 - p.sit;
+      const [dx, dy] = v2(side, aU * sk);
+      const fx = hx0 + dx * Lg * 0.98, fy = hipY + dy * Lg * 0.98 * (1 - 0.5 * p.sit) - aB * sk * H * 0.004;
       seg(hx0, hipY, rT, fx, fy, rA, lc, 9);
       if (d.outfit === "shorts") seg(hx0, hipY, rT * 1.08, hx0 + (fx - hx0) * 0.42, hipY + (fy - hipY) * 0.42, rT * 0.98, dk(d.bottom, k), 11);
       paint(ell(fx + side * hr * 0.1, fy + H * 0.006, hr * 0.58, hr * 0.27), col(dk(d.shoes, k)), 0, hr * 0.1);
