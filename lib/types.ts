@@ -15,6 +15,7 @@ export interface CharacterDef {
   outfit: "pants" | "shorts" | "skirt";
   sleeve: "short" | "long";
   build: number;   // 0.8 slim to 1.25 broad
+  voice?: string;  // text-to-speech voice; empty = the voice named like the character
   height: number;
 }
 
