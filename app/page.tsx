@@ -297,6 +297,8 @@ export default function Studio() {
                 <p>Moves: walk or <span className="text-slate-200">run</span> to a name, left, right, center · <span className="text-slate-200">enter from the left</span> · <span className="text-slate-200">walk out of the scene</span> · wave, point, shrug, jump, type on a laptop · look at a name, nod, shake head, turn around · smile, sad, angry, surprised</p>
                 <p>Props are directed like actors: <span className="text-slate-200">Car: enter from the left and stop next to Sam</span>. Prop and camera lines run alongside the line above.</p>
                 <p>Camera: <span className="text-slate-200">Camera: zoom in on Sam</span>, close-up, pan left or right, follow a name or prop, zoom out</p>
+                <p>Sitting: <span className="text-slate-200">Mina: sit on the Sofa and say &quot;Hi&quot;</span>, <span className="text-slate-200">stand up</span>. Things: <span className="text-slate-200">Sam: pick up the Box and give it to Mina</span>, <span className="text-slate-200">carry the Cake to the Table</span>, <span className="text-slate-200">put the Box on the Table</span>, <span className="text-slate-200">drop the Ball</span>.</p>
+                <p>Doors and cars: <span className="text-slate-200">Sam: enter through the Door and walk to Mina</span>, <span className="text-slate-200">leave through the Door</span>, <span className="text-slate-200">Sam: get in the Car and drive off to the right</span>, <span className="text-slate-200">get out of the Car</span>.</p>
                 <p>360° camera (3D mode only, only when you write it): <span className="text-slate-200">Camera: orbit around Sam for 5 seconds</span>, <span className="text-slate-200">Camera: 360 for 6 seconds</span>, <span className="text-slate-200">Camera: orbit 180 degrees around Mina for 4 seconds</span>, <span className="text-slate-200">Camera: wait 3 seconds then orbit around Sam for 5 seconds</span>. Add <span className="text-slate-200">left</span> to spin the other way.</p>
               </div>
             </div>
@@ -306,7 +308,7 @@ export default function Studio() {
             <div className="space-y-3">
               <div className={panel}>
                 <p className={lbl}>Background</p>
-                <div className="grid grid-cols-5 gap-2">
+                <div className="grid grid-cols-4 gap-2">
                   {THEME_LIST.map(t => (
                     <button key={t.id} onClick={() => setTheme(t.id)}
                       className={`rounded-xl border p-1 text-[11px] ${theme === t.id ? "border-violet-400 bg-violet-500/10" : "border-white/10"}`}>
