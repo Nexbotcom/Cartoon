@@ -3,15 +3,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Builder from "@/components/Builder";
 import FilmPanel from "@/components/FilmPanel";
 import PosePanel from "@/components/PosePanel";
-import type { SceneFile } from "@/lib/projects";
 import Timeline from "@/components/Timeline";
 import { H, THEME_LIST, W, renderFrame } from "@/lib/engine";
 import { listChars } from "@/lib/library";
 import { parseScript } from "@/lib/parser";
 import { PRESETS } from "@/lib/presets";
+import type { SceneFile } from "@/lib/projects";
 import { PROP_LIST } from "@/lib/props";
 import type { Renderer3D } from "@/lib/render3d";
 import { CastMember, CharacterDef, Pose, PoseBlock, PropKind, PropMember, Scene, ThemeId } from "@/lib/types";
+import { Line, VoiceError, audio, listVoices, playNow, prepareLines, resolveVoice, scheduleVoices, voiceKey } from "@/lib/voice";
 
 const SAMPLE = `Sam: enter from the left, walk to the center and smile
 & Mina: enter from the right, run to Sam and wave
@@ -20,6 +21,9 @@ Car: enter from the right and drive out of the scene to the left
 Camera: follow Sam`;
 
 type Tab = "script" | "stage" | "look" | "pose" | "timeline" | "film";
+interface VoiceStatus { kind: "idle" | "working" | "waiting" | "error" | "quota"; msg: string; done: number; total: number }
+const IDLE: VoiceStatus = { kind: "idle", msg: "", done: 0, total: 0 };
+
 const SLOTS = [380, 900, 640, 200, 1080];
 const panel = "rounded-2xl border border-white/10 bg-white/[0.03] p-3";
 const lbl = "mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400";
@@ -39,6 +43,10 @@ export default function Studio() {
   const raf = useRef(0);
   const timeRef = useRef(0);
   const r3 = useRef<Renderer3D | null>(null);
+  const playingRef = useRef(false);
+  const abortRef = useRef<AbortController | null>(null);
+  const stopAudioRef = useRef<() => void>(() => {});
+
   const [mode, setMode] = useState<"2d" | "3d">("2d");
   const [r3ready, setR3ready] = useState(false);
   const [note3, setNote3] = useState("");
@@ -59,6 +67,12 @@ export default function Studio() {
   const [draftT0, setDraftT0] = useState<number | null>(null);
   const [draftDur, setDraftDur] = useState(2);
 
+  const [voices, setVoices] = useState<string[]>([]);
+  const [voiceNote, setVoiceNote] = useState("");
+  const [muteVoices, setMuteVoices] = useState(false);
+  const [durations, setDurations] = useState<Record<string, number>>({});
+  const [vs, setVs] = useState<VoiceStatus>(IDLE);
+
   const setT = (t: number) => { timeRef.current = t; setTime(t); };
 
   const castLive = useMemo(() => {
@@ -67,11 +81,24 @@ export default function Studio() {
       i === sel ? { ...c, keys: [...(c.keys ?? []), { t0: draftT0, t1: draftT0 + draftDur, pose: draft }] } : c);
   }, [cast, tab, sel, draft, draftT0, draftDur]);
 
-  const scene = useMemo(() => parseScript(script, castLive, props), [script, castLive, props]);
-  const ctx = () => cv.current!.getContext("2d")!;
-  const stop = () => cancelAnimationFrame(raf.current);
+  // known voice lengths make bubbles last as long as the audio
+  const durOf = useMemo(() => (who: number, text: string): number | undefined => {
+    const d = castLive[who]?.def;
+    return d ? durations[voiceKey(resolveVoice(d, voices), text)] : undefined;
+  }, [castLive, durations, voices]);
 
-  // one place that decides how a frame is drawn: 2D engine or the 3D renderer
+  const scene = useMemo(
+    () => parseScript(script, castLive, props, muteVoices ? undefined : durOf),
+    [script, castLive, props, durOf, muteVoices]);
+
+  const ctx = () => cv.current!.getContext("2d")!;
+  const stop = () => {
+    cancelAnimationFrame(raf.current);
+    stopAudioRef.current();
+    stopAudioRef.current = () => {};
+    playingRef.current = false;
+  };
+
   const paint = (c: CanvasRenderingContext2D, sc: Scene, t: number) => {
     if (mode === "3d" && r3.current) r3.current.render(c, sc, t, { theme, bubbles });
     else renderFrame(c, sc, t, { bubbles, theme });
@@ -94,44 +121,133 @@ export default function Studio() {
       });
     return () => { dead = true; };
   }, [mode]);
-  useEffect(() => () => { r3.current?.dispose(); }, []);
+  useEffect(() => () => { stop(); r3.current?.dispose(); }, []);
 
+  // repaint when something changes (never while a playback is running)
   useEffect(() => {
-    stop();
+    if (playingRef.current) return;
     const t = Math.min(timeRef.current, scene.duration);
     setT(t);
     paint(ctx(), scene, t);
-    return stop;
   }, [scene, bubbles, theme, mode, r3ready]);
   useEffect(() => { listChars().then(setLib); }, [tab]);
   useEffect(() => { setDraft({}); setDraftT0(null); }, [sel]);
+  useEffect(() => { listVoices().then(r => { setVoices(r.voices); setVoiceNote(r.error ?? ""); }); }, []);
 
-  const play = (onDone?: () => void) => {
+  // ---------- voices ----------
+  const mkDurOf = (durs: Record<string, number>, cs: CastMember[]) => (who: number, text: string): number | undefined => {
+    const d = cs[who]?.def;
+    return d ? durs[voiceKey(resolveVoice(d, voices), text)] : undefined;
+  };
+  const collectLines = (sc: Scene): Line[] => {
+    const map = new Map<string, Line>();
+    sc.actors.forEach(a => {
+      const v = resolveVoice(a.def, voices);
+      for (const q of a.actions) if (q.say) map.set(voiceKey(v, q.say), { key: voiceKey(v, q.say), text: q.say, voice: v });
+    });
+    return Array.from(map.values());
+  };
+  const voiceCbs = (ctl: AbortController) => ({
+    signal: ctl.signal,
+    onProgress: (done: number, total: number) => setVs({ kind: "working", msg: "", done, total }),
+    onWait: (attempt: number, done: number, total: number) =>
+      setVs({ kind: "waiting", msg: `Waiting for a free GPU... attempt ${attempt}`, done, total }),
+  });
+  const voiceFailed = (e: unknown, ctl: AbortController, total: number) => {
+    if (ctl.signal.aborted || (e instanceof DOMException && e.name === "AbortError")) { setVs({ ...IDLE, msg: "Voice generation cancelled." }); return; }
+    if (e instanceof VoiceError && e.kind === "quota") { setVs({ kind: "quota", msg: e.message, done: 0, total }); return; }
+    setVs({ kind: "error", msg: e instanceof Error ? e.message : String(e), done: 0, total });
+  };
+  const cancelVoices = () => abortRef.current?.abort();
+
+  const ensureVoices = async (): Promise<Record<string, number> | null> => {
+    const lines = collectLines(scene);
+    if (lines.length === 0) return durations;
+    const ctl = new AbortController();
+    abortRef.current = ctl;
+    setVs({ kind: "working", msg: "", done: 0, total: lines.length });
+    try {
+      const d = await prepareLines(lines, voiceCbs(ctl));
+      setDurations(prev => ({ ...prev, ...d }));
+      setVs(IDLE);
+      return { ...durations, ...d };
+    } catch (e) {
+      voiceFailed(e, ctl, lines.length);
+      return null;
+    }
+  };
+
+  // makes the voices, then returns the scene with timings that match the audio
+  const prepare = async (): Promise<Scene | null> => {
+    audio();                       // create / resume the audio engine inside the click
+    if (muteVoices) return scene;
+    const d = await ensureVoices();
+    if (!d) return null;
+    return parseScript(script, castLive, props, mkDurOf(d, castLive));
+  };
+
+  const testVoice = async (d: CharacterDef) => {
+    audio();
+    const voice = resolveVoice(d, voices);
+    const text = `Hello, I am ${d.name.replace(/\s+\d+$/, "")}.`;
+    const key = voiceKey(voice, text);
+    const ctl = new AbortController();
+    abortRef.current = ctl;
+    setVs({ kind: "working", msg: "", done: 0, total: 1 });
+    try {
+      await prepareLines([{ key, text, voice }], voiceCbs(ctl));
+      setVs(IDLE);
+      playNow(key);
+    } catch (e) { voiceFailed(e, ctl, 1); }
+  };
+
+  // ---------- playback and export ----------
+  const runPlayback = (sc: Scene, onDone?: () => void) => {
     stop();
-    const c = ctx(), t0 = performance.now();
+    playingRef.current = true;
+    const c = ctx();
+    const lead = 0.15;                                  // small lead-in so picture and sound start together
+    const t0 = performance.now() + lead * 1000;
+    if (!muteVoices) stopAudioRef.current = scheduleVoices(sc, i => resolveVoice(sc.actors[i].def, voices), lead);
     const tick = (now: number) => {
-      const t = Math.min((now - t0) / 1000, scene.duration);
-      paint(c, scene, t);
+      const t = Math.min(Math.max(0, (now - t0) / 1000), sc.duration);
+      paint(c, sc, t);
       setT(t);
-      if (t < scene.duration) raf.current = requestAnimationFrame(tick); else onDone?.();
+      if (t < sc.duration) raf.current = requestAnimationFrame(tick);
+      else { playingRef.current = false; onDone?.(); }
     };
     raf.current = requestAnimationFrame(tick);
   };
+
+  const startPlay = async () => {
+    const sc = await prepare();
+    if (sc) runPlayback(sc);
+  };
   const scrub = (t: number) => { stop(); setT(t); paint(ctx(), scene, t); };
 
-  const exportVideo = () => {
-    const mime = ["video/mp4;codecs=avc1", "video/webm;codecs=vp9", "video/webm"].find(m => MediaRecorder.isTypeSupported(m));
+  const exportVideo = async () => {
+    const sc = await prepare();
+    if (!sc) return;
+    const withAudio = ["video/mp4;codecs=avc1.42E01E,mp4a.40.2", "video/mp4;codecs=avc1,mp4a.40.2", "video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"];
+    const videoOnly = ["video/mp4;codecs=avc1", "video/webm;codecs=vp9", "video/webm"];
+    const mime = (muteVoices ? videoOnly : withAudio).find(m => MediaRecorder.isTypeSupported(m));
     if (!mime) { alert("This browser cannot record video. Try Chrome."); return; }
-    const rec = new MediaRecorder(cv.current!.captureStream(30), { mimeType: mime, videoBitsPerSecond: 8_000_000 });
+
+    // the picture track from the canvas plus the voice track from the audio engine
+    const tracks: MediaStreamTrack[] = [...cv.current!.captureStream(30).getVideoTracks()];
+    if (!muteVoices) tracks.push(...audio().dest.stream.getAudioTracks());
+    const rec = new MediaRecorder(new MediaStream(tracks), { mimeType: mime, videoBitsPerSecond: 8_000_000, audioBitsPerSecond: 128_000 });
     const chunks: BlobPart[] = [];
-    rec.ondataavailable = e => chunks.push(e.data);
+    rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
     rec.onstop = () => {
       const a = document.createElement("a");
       a.href = URL.createObjectURL(new Blob(chunks, { type: mime }));
       a.download = `scene.${mime.includes("mp4") ? "mp4" : "webm"}`; a.click();
       setRecording(false);
     };
-    setRecording(true); rec.start(); play(() => rec.stop());
+    setRecording(true);
+    rec.start();
+    runPlayback(sc, () => setTimeout(() => rec.stop(), 500));   // short tail so the last word is not cut
   };
 
   const askAI = async () => {
@@ -225,6 +341,8 @@ export default function Studio() {
       style={mode === m ? grad : undefined}>{label}</button>
   );
 
+  const working = vs.kind === "working" || vs.kind === "waiting";
+
   return (
     <div className="min-h-screen bg-[#0b0d14] text-slate-100">
       <header className="flex items-center gap-3 border-b border-white/10 px-4 py-3">
@@ -245,10 +363,10 @@ export default function Studio() {
           <input type="range" min={0} max={scene.duration} step={0.01} value={time}
             onChange={e => scrub(+e.target.value)} className="w-full accent-violet-500" />
           <div className="flex flex-wrap items-center gap-2">
-            <button onClick={() => play()} disabled={recording} style={grad}
+            <button onClick={() => void startPlay()} disabled={recording || working} style={grad}
               className="rounded-xl px-5 py-2 font-medium text-white disabled:opacity-50">▶ Play</button>
-            <button onClick={stop} className="rounded-xl border border-white/10 bg-white/5 px-4 py-2">■ Stop</button>
-            <button onClick={exportVideo} disabled={recording}
+            <button onClick={() => { cancelVoices(); stop(); }} className="rounded-xl border border-white/10 bg-white/5 px-4 py-2">■ Stop</button>
+            <button onClick={() => void exportVideo()} disabled={recording || working}
               className="rounded-xl bg-emerald-500 px-4 py-2 font-medium text-black disabled:opacity-50">
               {recording ? "Recording..." : "⬇ Export video"}
             </button>
@@ -256,8 +374,30 @@ export default function Studio() {
               <input type="checkbox" checked={bubbles} onChange={e => setBubbles(e.target.checked)} className="accent-violet-500" />
               Speech bubbles
             </label>
+            <label className="flex items-center gap-2 text-sm text-slate-300">
+              <input type="checkbox" checked={muteVoices} onChange={e => setMuteVoices(e.target.checked)} className="accent-violet-500" />
+              Mute voices
+            </label>
             <span className="text-sm tabular-nums text-slate-500">{time.toFixed(1)}s / {scene.duration.toFixed(1)}s</span>
           </div>
+
+          {(vs.kind !== "idle" || vs.msg) && (
+            <div className={`flex items-start gap-3 rounded-xl border px-3 py-2 text-sm ${
+              vs.kind === "error" || vs.kind === "quota"
+                ? "border-red-400/40 bg-red-500/10 text-red-200"
+                : "border-violet-400/30 bg-violet-500/10 text-slate-200"}`}>
+              <div className="min-w-0 flex-1">
+                {vs.kind === "working" && <p>Generating voices {Math.min(vs.done + 1, vs.total)}/{vs.total}</p>}
+                {vs.kind === "waiting" && <p>{vs.msg} (line {Math.min(vs.done + 1, vs.total)}/{vs.total})</p>}
+                {vs.kind === "quota" && <p>The daily voice quota is used up, so voice generation stopped. Try again later, or switch on Mute voices. <span className="opacity-80">{vs.msg}</span></p>}
+                {vs.kind === "error" && <p>Voice problem: {vs.msg}</p>}
+                {vs.kind === "idle" && <p className="text-slate-400">{vs.msg}</p>}
+              </div>
+              {working
+                ? <button onClick={cancelVoices} className="rounded-lg border border-white/20 px-3 py-1 text-xs hover:bg-white/10">Cancel</button>
+                : <button onClick={() => setVs(IDLE)} className="rounded-lg border border-white/20 px-3 py-1 text-xs hover:bg-white/10">Dismiss</button>}
+            </div>
+          )}
         </section>
 
         <section className="min-w-0 space-y-3">
@@ -297,9 +437,10 @@ export default function Studio() {
                 <p>Moves: walk or <span className="text-slate-200">run</span> to a name, left, right, center · <span className="text-slate-200">enter from the left</span> · <span className="text-slate-200">walk out of the scene</span> · wave, point, shrug, jump, type on a laptop · look at a name, nod, shake head, turn around · smile, sad, angry, surprised</p>
                 <p>Props are directed like actors: <span className="text-slate-200">Car: enter from the left and stop next to Sam</span>. Prop and camera lines run alongside the line above.</p>
                 <p>Camera: <span className="text-slate-200">Camera: zoom in on Sam</span>, close-up, pan left or right, follow a name or prop, zoom out</p>
-                <p>Sitting: <span className="text-slate-200">Mina: sit on the Sofa and say &quot;Hi&quot;</span>, <span className="text-slate-200">stand up</span>. Things: <span className="text-slate-200">Sam: pick up the Box and give it to Mina</span>, <span className="text-slate-200">carry the Cake to the Table</span>, <span className="text-slate-200">put the Box on the Table</span>, <span className="text-slate-200">drop the Ball</span>.</p>
-                <p>Doors and cars: <span className="text-slate-200">Sam: enter through the Door and walk to Mina</span>, <span className="text-slate-200">leave through the Door</span>, <span className="text-slate-200">Sam: get in the Car and drive off to the right</span>, <span className="text-slate-200">get out of the Car</span>.</p>
-                <p>360° camera (3D mode only, only when you write it): <span className="text-slate-200">Camera: orbit around Sam for 5 seconds</span>, <span className="text-slate-200">Camera: 360 for 6 seconds</span>, <span className="text-slate-200">Camera: orbit 180 degrees around Mina for 4 seconds</span>, <span className="text-slate-200">Camera: wait 3 seconds then orbit around Sam for 5 seconds</span>. Add <span className="text-slate-200">left</span> to spin the other way.</p>
+                <p>Sitting: <span className="text-slate-200">Mina: sit on the Sofa and say &quot;Hi&quot;</span>, <span className="text-slate-200">stand up</span>. Things: <span className="text-slate-200">Sam: pick up the Box and give it to Mina</span>, <span className="text-slate-200">put the Box on the Table</span>.</p>
+                <p>Doors and cars: <span className="text-slate-200">Sam: enter through the Door and walk to Mina</span>, <span className="text-slate-200">Sam: get in the Car and drive off to the right</span>, <span className="text-slate-200">get out of the Car</span>.</p>
+                <p>360° camera (3D mode only, only when you write it): <span className="text-slate-200">Camera: orbit around Sam for 5 seconds</span>, <span className="text-slate-200">Camera: wait 3 seconds then orbit around Sam for 5 seconds</span>. Add <span className="text-slate-200">left</span> to spin the other way.</p>
+                <p>Voices: every quoted line is spoken by the voice named like the character. Change a voice in the Character tab. Speech bubbles last as long as the audio.</p>
               </div>
             </div>
           )}
@@ -387,7 +528,11 @@ export default function Studio() {
           )}
 
           {tab === "look" && (cast[sel]
-            ? (<>{actorChips}<Builder def={cast[sel].def} setDef={d => patch(sel, { def: d })} /></>)
+            ? (<>
+                {actorChips}
+                <Builder def={cast[sel].def} setDef={d => patch(sel, { def: d })}
+                  voices={voices} voiceNote={voiceNote} onTestVoice={testVoice} />
+              </>)
             : needActor)}
 
           {tab === "pose" && (cast[sel]
@@ -398,7 +543,9 @@ export default function Studio() {
                   onDelete={delBlock} onEdit={editBlock} onPatch={patchBlock} />
               </>)
             : needActor)}
+
           {tab === "film" && <FilmPanel current={snapshot} onLoad={loadScene} />}
+
           {tab === "timeline" && (
             <div className={panel}>
               <div className="mb-2 flex items-center gap-3">
