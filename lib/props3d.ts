@@ -110,7 +110,7 @@ export function buildProp3D(k: Kit, kind: PropKind, color: string): THREE.Group 
       break;
     }
     case "bench":
-      bx(g, 1.5, 0.06, 0.45, color, 0, 0.42, 0);
+      bx(g, 1.5, 0.06, 0.45, color, 0, 0.46, 0);
       bx(g, 1.5, 0.12, 0.05, color, 0, 0.72, -0.2); bx(g, 1.5, 0.12, 0.05, color, 0, 0.9, -0.2);
       bx(g, 0.06, 0.42, 0.4, d2, -0.65, 0.21, 0); bx(g, 0.06, 0.42, 0.4, d2, 0.65, 0.21, 0);
       break;
