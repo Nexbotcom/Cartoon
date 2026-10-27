@@ -76,8 +76,17 @@ export default function FilmPanel({ current, onLoad }: { current: () => SceneFil
         <p>4. Too short or too long? Add <span className="text-slate-200">wait 2 seconds</span> lines or change dialogue. The time next to each scene is calculated by the app.</p>
       </div>
 
+        <div className={panel}>
+        <div className="mb-2 flex items-baseline gap-2">
+          <p className={`${lbl} mb-0`}>Series: Class 7B (season 1)</p>
+          <span className="ml-auto text-sm tabular-nums text-slate-400">{SERIES.length} episodes</span>
+        </div>
+        <div className="space-y-2">{SERIES.map((s, i) => card(s, seriesLens[i]))}</div>
+      </div>
+
       <div className={panel}>
         <p className={lbl}>My scenes</p>
+        
         <div className="mb-3 flex gap-2">
           <input value={name} onChange={e => setName(e.target.value)} placeholder="Name for the current scene"
             className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none focus:border-violet-400" />
