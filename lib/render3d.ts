@@ -1,43 +1,29 @@
 import * as THREE from "three";
-import { CharacterDef, PropKind, Scene, ThemeId } from "./types";
+import { CharacterDef, Scene, ThemeId } from "./types";
 import { FOOT, H, W, actorState, camAt, drawBubble, posAt, propPlace, visibleAt } from "./engine";
+import { AnimIn, D, TAU, cl, lerp, makeKit, sm } from "./kit3d";
+import { Env, buildEnv } from "./env3d";
+import { RiderHead, buildProp3D } from "./props3d";
 
-const D = Math.PI / 180, TAU = Math.PI * 2;
 const UNIT = 150;                                   // 2D pixels per 3D metre
 const toX = (px: number) => (px - 640) / UNIT;
 const toZ = (depth: number) => -depth * 8;
-const sm = (u: number) => u * u * (3 - 2 * u);
-const lerp = (a: number, b: number, u: number) => a + (b - a) * u;
-const cl = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
-const rnd = (i: number, k: number) => { const s = Math.sin(i * 127.1 + k * 311.7) * 43758.5; return s - Math.floor(s); };
-const dk = (h: string, f: number) => {
-  if (h[0] !== "#" || h.length < 7) return h;
-  const n = parseInt(h.slice(1, 7), 16);
-  return `rgb(${Math.round(((n >> 16) & 255) * f)},${Math.round(((n >> 8) & 255) * f)},${Math.round((n & 255) * f)})`;
-};
 
+export type Sel = { kind: "prop" | "actor"; index: number };
+export interface RenderOpts {
+  theme: ThemeId; bubbles: boolean; alive: boolean; hidden: string[]; editor: boolean; selection: Sel | null;
+}
 export interface Renderer3D {
-  render(c: CanvasRenderingContext2D, s: Scene, t: number, o: { theme: ThemeId; bubbles: boolean }): void;
+  render(c: CanvasRenderingContext2D, s: Scene, t: number, o: RenderOpts): void;
+  orbit(dx: number, dy: number): void;
+  zoom(f: number): void;
+  pan(dx: number, dy: number): void;
+  resetEditorCam(): void;
+  pick(nx: number, ny: number): Sel | null;
+  ground(nx: number, ny: number, y?: number): { X: number; Z: number } | null;
+  info(): { parts: string[]; bounds: Env["bounds"]; height: number };
   dispose(): void;
 }
-
-interface EnvCfg {
-  sky: string[]; ground: string; hemi: [string, string, number];
-  sun?: { dir: [number, number, number]; color: string; intensity: number; disc: string; size: number };
-  stars?: boolean; bld?: [string, string]; road?: boolean; trees?: boolean; room?: boolean; lit?: boolean;
-  place?: "pitch" | "school" | "hospital";
-}
-const DAYSUN = { dir: [0.5, 0.35, -0.8] as [number, number, number], color: "#fff6df", intensity: 2.2, disc: "#fff3b0", size: 5 };
-const ENV: Record<ThemeId, EnvCfg> = {
-  day:      { sky: ["#8fd0ff", "#eef8ff"], ground: "#9bc58a", hemi: ["#cfe9ff", "#8a9a7a", 1.3], sun: DAYSUN, bld: ["#b3bfd3", "#e6ecf7"], road: true },
-  sunset:   { sky: ["#2d1f5e", "#d9577a", "#ffb36b"], ground: "#5a6b4a", hemi: ["#ffb08a", "#4a3a5a", 0.9], sun: { dir: [-0.6, 0.12, -0.8], color: "#ffb27a", intensity: 1.6, disc: "#ffd29a", size: 8 }, bld: ["#4a2f66", "#7a5588"], road: true },
-  night:    { sky: ["#0b1030", "#1b2a5c"], ground: "#27413a", hemi: ["#4a5a9a", "#1a2438", 0.8], sun: { dir: [0.4, 0.45, -0.8], color: "#9fb4ff", intensity: 0.9, disc: "#f4f1d8", size: 3.5 }, stars: true, bld: ["#202b4d", "#ffd86b"], road: true, lit: true },
-  park:     { sky: ["#9fdcff", "#f4fbff"], ground: "#8fd07a", hemi: ["#cfe9ff", "#7a9a6a", 1.3], sun: { dir: [-0.45, 0.4, -0.8], color: "#fff6df", intensity: 2.2, disc: "#fff3b0", size: 5 }, trees: true },
-  room:     { sky: ["#eadfce", "#d9ccb8"], ground: "#b98c5e", hemi: ["#fff2e0", "#8a6a4a", 1.5], room: true },
-  pitch:    { sky: ["#7ec8ff", "#eaf6ff"], ground: "#3f9a4a", hemi: ["#cfe9ff", "#7a9a6a", 1.3], sun: DAYSUN, place: "pitch" },
-  school:   { sky: ["#8fd0ff", "#eef8ff"], ground: "#8e949c", hemi: ["#cfe9ff", "#8a9a7a", 1.3], sun: DAYSUN, place: "school" },
-  hospital: { sky: ["#a9d8ff", "#f4fbff"], ground: "#9bc58a", hemi: ["#cfe9ff", "#8a9a7a", 1.3], sun: DAYSUN, place: "hospital" },
-};
 
 interface Rig {
   sig: string; root: THREE.Group; body: THREE.Group; torso: THREE.Group; neck: THREE.Group;
@@ -47,7 +33,11 @@ interface Rig {
   mFlat: THREE.Mesh; mSmile: THREE.Mesh; mFrown: THREE.Mesh; mOpen: THREE.Mesh;
   laptop: THREE.Group; angle: number; init: boolean; s: number;
 }
-interface RiderHead { g: THREE.Group; skin: THREE.Mesh; hair: THREE.Mesh }
+const dk = (h: string, f: number) => {
+  if (h[0] !== "#" || h.length < 7) return h;
+  const n = parseInt(h.slice(1, 7), 16);
+  return `rgb(${Math.round(((n >> 16) & 255) * f)},${Math.round(((n >> 8) & 255) * f)},${Math.round((n & 255) * f)})`;
+};
 
 export function createRenderer3D(): Renderer3D {
   const canvas = document.createElement("canvas");
@@ -59,56 +49,18 @@ export function createRenderer3D(): Renderer3D {
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
   const scene3 = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(40, W / H, 0.1, 300);
+  const camera = new THREE.PerspectiveCamera(40, W / H, 0.1, 300);   // the director camera
+  const edCam = new THREE.PerspectiveCamera(45, W / H, 0.1, 400);    // the editor camera (separate)
   const hemi = new THREE.HemisphereLight(0xffffff, 0x888888, 1);
   const sun = new THREE.DirectionalLight(0xffffff, 1);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
-  sun.shadow.camera.left = -14; sun.shadow.camera.right = 14; sun.shadow.camera.top = 14; sun.shadow.camera.bottom = -14;
-  sun.shadow.camera.near = 1; sun.shadow.camera.far = 90;
+  sun.shadow.camera.near = 1; sun.shadow.camera.far = 120;
   sun.shadow.bias = -0.0005;
-  const roomLight = new THREE.PointLight(0xfff0d0, 0, 18, 2);
-  roomLight.position.set(0, 4, -3);
-  scene3.add(hemi, sun, sun.target, roomLight);
+  scene3.add(hemi, sun, sun.target);
 
-  // ---------- materials ----------
-  const gm = new THREE.DataTexture(new Uint8Array([60, 140, 255]), 3, 1, THREE.RedFormat);
-  gm.minFilter = THREE.NearestFilter; gm.magFilter = THREE.NearestFilter; gm.needsUpdate = true;
-  const matCache = new Map<string, THREE.MeshToonMaterial>();
-  const toon = (col: string) => {
-    let m = matCache.get(col);
-    if (!m) { m = new THREE.MeshToonMaterial({ color: new THREE.Color(col), gradientMap: gm }); matCache.set(col, m); }
-    return m;
-  };
-  const glow = (col: string, k = 0.9) => {
-    const key = `glow|${col}|${k}`;
-    let m = matCache.get(key);
-    if (!m) { m = new THREE.MeshToonMaterial({ color: new THREE.Color(col), gradientMap: gm, emissive: new THREE.Color(col), emissiveIntensity: k }); matCache.set(key, m); }
-    return m;
-  };
-  const glassMat = new THREE.MeshToonMaterial({ color: new THREE.Color("#cfe9ff"), gradientMap: gm, transparent: true, opacity: 0.4 });
-
-  // ---------- shape helpers ----------
-  const mesh = (parent: THREE.Object3D, geo: THREE.BufferGeometry, mat: THREE.Material, x = 0, y = 0, z = 0) => {
-    const m = new THREE.Mesh(geo, mat);
-    m.position.set(x, y, z); m.castShadow = true; m.receiveShadow = true;
-    parent.add(m);
-    return m;
-  };
-  const bx = (g: THREE.Object3D, w: number, h: number, d: number, col: string, x: number, y: number, z: number, lit = false) =>
-    mesh(g, new THREE.BoxGeometry(w, h, d), lit ? glow(col) : toon(col), x, y, z);
-  const cyl = (g: THREE.Object3D, rt: number, rb: number, h: number, col: string, x: number, y: number, z: number) =>
-    mesh(g, new THREE.CylinderGeometry(rt, rb, h, 18), toon(col), x, y, z);
-  const sph = (g: THREE.Object3D, r: number, col: string, x: number, y: number, z: number, sx = 1, sy = 1, sz = 1) => {
-    const m = mesh(g, new THREE.SphereGeometry(r, 20, 14), toon(col), x, y, z);
-    m.scale.set(sx, sy, sz);
-    return m;
-  };
-  const limb = (g: THREE.Object3D, r: number, len: number, col: string) =>
-    mesh(g, new THREE.CapsuleGeometry(r, Math.max(0.01, len - 2 * r), 4, 10), toon(col), 0, -len / 2, 0);
-  const disposeObj = (o: THREE.Object3D) => {
-    o.traverse(ch => { const m = ch as THREE.Mesh; if (m.geometry) m.geometry.dispose(); });
-  };
+  const k = makeKit();
+  const { toon, bx, cyl, sph, mesh, limb } = k;
 
   // ---------- characters ----------
   const buildCharacter = (def: CharacterDef): Rig => {
@@ -135,7 +87,7 @@ export function createRenderer3D(): Renderer3D {
     if (def.outfit === "skirt") {
       const sk = new THREE.Mesh(
         new THREE.CylinderGeometry(0.19 * b, 0.34 * b, 0.34, 24, 1, true),
-        new THREE.MeshToonMaterial({ color: new THREE.Color(bot), gradientMap: gm, side: THREE.DoubleSide }));
+        new THREE.MeshToonMaterial({ color: new THREE.Color(bot), gradientMap: k.gm, side: THREE.DoubleSide }));
       sk.position.y = -0.1; sk.castShadow = true; torso.add(sk);
     }
 
@@ -166,8 +118,8 @@ export function createRenderer3D(): Renderer3D {
       cap.scale.y = 1.1; back.scale.y = 1.1;
       if (def.hairStyle === "spiky") {
         const cg = new THREE.ConeGeometry(0.04, 0.11, 6);
-        for (let k = 0; k < 7; k++) {
-          const th = k === 0 ? 0 : 0.75, ph = ((k - 1) / 6) * TAU;
+        for (let i = 0; i < 7; i++) {
+          const th = i === 0 ? 0 : 0.75, ph = ((i - 1) / 6) * TAU;
           const dir = new THREE.Vector3(Math.sin(th) * Math.cos(ph), Math.cos(th), Math.sin(th) * Math.sin(ph)).normalize();
           const cn = mesh(head, cg, hm, dir.x * 0.125, dir.y * 0.138 + 0.01, dir.z * 0.125);
           cn.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
@@ -210,266 +162,42 @@ export function createRenderer3D(): Renderer3D {
     };
   };
 
-  // ---------- props (metres; front faces +Z, car faces +X) ----------
-  const buildProp = (kind: PropKind, color: string): THREE.Group => {
-    const g = new THREE.Group();
-    const d1 = dk(color, 0.78), d2 = dk(color, 0.62);
-    switch (kind) {
-      case "sofa":
-        bx(g, 1.9, 0.32, 0.85, d1, 0, 0.24, 0); bx(g, 1.9, 0.62, 0.22, d1, 0, 0.7, -0.32);
-        bx(g, 0.22, 0.55, 0.85, d1, -0.84, 0.46, 0); bx(g, 0.22, 0.55, 0.85, d1, 0.84, 0.46, 0);
-        bx(g, 0.8, 0.14, 0.62, color, -0.4, 0.45, 0.08); bx(g, 0.8, 0.14, 0.62, color, 0.4, 0.45, 0.08);
-        break;
-      case "chair":
-        bx(g, 0.55, 0.07, 0.55, color, 0, 0.48, 0); bx(g, 0.55, 0.62, 0.07, d1, 0, 0.85, -0.24);
-        for (const [sx, sz] of [[-0.24, -0.24], [0.24, -0.24], [-0.24, 0.24], [0.24, 0.24]]) bx(g, 0.06, 0.48, 0.06, d2, sx, 0.24, sz);
-        break;
-      case "table":
-        bx(g, 1.4, 0.07, 0.8, color, 0, 0.45, 0);
-        for (const [sx, sz] of [[-0.62, -0.33], [0.62, -0.33], [-0.62, 0.33], [0.62, 0.33]]) bx(g, 0.07, 0.45, 0.07, d2, sx, 0.22, sz);
-        cyl(g, 0.05, 0.04, 0.09, "#f4f1ea", -0.3, 0.52, 0.1);
-        break;
-      case "desk":
-        bx(g, 1.7, 0.06, 0.8, color, 0, 0.76, 0);
-        bx(g, 0.07, 0.76, 0.8, d1, -0.8, 0.38, 0); bx(g, 0.07, 0.76, 0.8, d1, 0.8, 0.38, 0);
-        bx(g, 0.5, 0.5, 0.74, d1, 0.5, 0.45, 0);
-        bx(g, 0.5, 0.02, 0.34, "#c9ccd3", -0.3, 0.8, 0.05);
-        bx(g, 0.5, 0.32, 0.02, "#2b2f3a", -0.3, 0.97, -0.1).rotation.x = -0.15;
-        break;
-      case "bookshelf": {
-        const cols = ["#e07b45", "#5b8a3c", "#4b6aa8", "#c0405a", "#f2c94c"];
-        bx(g, 0.06, 2.1, 0.35, color, -0.52, 1.05, 0); bx(g, 0.06, 2.1, 0.35, color, 0.52, 1.05, 0);
-        bx(g, 1.1, 2.1, 0.04, d2, 0, 1.05, -0.15);
-        for (let r = 0; r < 4; r++) {
-          const y0 = 0.05 + r * 0.5;
-          bx(g, 1.0, 0.05, 0.33, color, 0, y0, 0);
-          let x = -0.46, k = 0;
-          while (x < 0.42) {
-            const bw = 0.05 + ((r * 5 + k * 3) % 5) * 0.012, bh = 0.26 + ((r * 3 + k * 5) % 6) * 0.03;
-            bx(g, bw, bh, 0.22, cols[(r * 7 + k) % 5], x + bw / 2, y0 + 0.025 + bh / 2, 0);
-            x += bw + 0.01; k++;
-          }
-        }
-        bx(g, 1.0, 0.05, 0.33, color, 0, 2.05, 0);
-        break;
-      }
-      case "lamp":
-        cyl(g, 0.2, 0.22, 0.04, "#3a3f4b", 0, 0.02, 0); cyl(g, 0.02, 0.02, 1.6, "#3a3f4b", 0, 0.85, 0);
-        mesh(g, new THREE.CylinderGeometry(0.14, 0.24, 0.3, 18), glow(color, 0.7), 0, 1.75, 0);
-        break;
-      case "plant":
-        cyl(g, 0.16, 0.12, 0.3, "#c9855a", 0, 0.15, 0);
-        for (let k = 0; k < 7; k++) {
-          const a = (k / 7) * TAU;
-          const leaf = sph(g, 1, k % 2 ? color : d1, Math.cos(a) * 0.1, 0.6, Math.sin(a) * 0.1, 0.09, 0.3, 0.09);
-          leaf.rotation.z = -Math.cos(a) * 0.5; leaf.rotation.x = Math.sin(a) * 0.5;
-        }
-        break;
-      case "tv":
-        bx(g, 1.5, 0.5, 0.5, "#8a6a4a", 0, 0.25, 0); bx(g, 1.5, 0.9, 0.08, color, 0, 0.98, 0);
-        bx(g, 1.38, 0.78, 0.02, "#3a6ea5", 0, 0.98, 0.05, true);
-        break;
-      case "door": {
-        bx(g, 1.0, 2.2, 0.1, d2, 0, 1.1, 0);
-        bx(g, 0.84, 2.1, 0.02, "#241d2b", 0, 1.05, -0.03);
-        const pivot = new THREE.Group(); pivot.position.set(-0.42, 0, 0.03); g.add(pivot);
-        bx(pivot, 0.84, 2.1, 0.08, color, 0.42, 1.05, 0);
-        bx(pivot, 0.6, 0.8, 0.02, d1, 0.42, 1.5, 0.05); bx(pivot, 0.6, 0.8, 0.02, d1, 0.42, 0.6, 0.05);
-        sph(pivot, 0.04, "#f2c94c", 0.74, 1.05, 0.07);
-        g.userData.panel = pivot;
-        break;
-      }
-      case "bed":
-        bx(g, 2.1, 0.3, 1.5, "#8a6a4a", 0, 0.25, 0); bx(g, 2.0, 0.25, 1.4, "#f4f1ea", 0, 0.52, 0);
-        bx(g, 1.4, 0.1, 1.46, color, 0.3, 0.66, 0);
-        bx(g, 0.5, 0.12, 0.4, "#ffffff", -0.7, 0.7, 0.35); bx(g, 0.5, 0.12, 0.4, "#ffffff", -0.7, 0.7, -0.35);
-        bx(g, 0.1, 1.0, 1.6, "#8a6a4a", -1.05, 0.7, 0);
-        break;
-      case "tree":
-        cyl(g, 0.18, 0.24, 1.4, "#6b4a2f", 0, 0.7, 0);
-        sph(g, 1.0, d1, 0, 2.3, 0); sph(g, 0.8, color, -0.6, 2.0, 0.2); sph(g, 0.8, color, 0.6, 2.0, -0.1); sph(g, 0.9, color, 0, 2.6, 0);
-        break;
-      case "bench":
-        bx(g, 1.5, 0.06, 0.45, color, 0, 0.42, 0);
-        bx(g, 1.5, 0.12, 0.05, color, 0, 0.72, -0.2); bx(g, 1.5, 0.12, 0.05, color, 0, 0.9, -0.2);
-        bx(g, 0.06, 0.42, 0.4, d2, -0.65, 0.21, 0); bx(g, 0.06, 0.42, 0.4, d2, 0.65, 0.21, 0);
-        break;
-      case "streetlight":
-        cyl(g, 0.05, 0.07, 3.4, color, 0, 1.7, 0); cyl(g, 0.12, 0.14, 0.15, color, 0, 0.07, 0);
-        bx(g, 0.7, 0.06, 0.06, color, 0.3, 3.4, 0); bx(g, 0.4, 0.1, 0.2, color, 0.6, 3.35, 0);
-        bx(g, 0.3, 0.04, 0.14, "#fff3b0", 0.6, 3.28, 0, true);
-        break;
-      case "car": {
-        bx(g, 2.1, 0.45, 1.0, color, 0, 0.5, 0);
-        bx(g, 1.1, 0.06, 0.92, color, -0.15, 1.17, 0);
-        for (const sx of [-0.65, 0.35]) for (const sz of [-0.43, 0.43]) bx(g, 0.06, 0.42, 0.06, color, sx, 0.93, sz);
-        mesh(g, new THREE.BoxGeometry(1.0, 0.34, 0.9), glassMat, -0.15, 0.95, 0);
-        bx(g, 0.9, 0.1, 0.8, "#3a3f4b", -0.15, 0.62, 0); bx(g, 0.1, 0.3, 0.7, "#3a3f4b", -0.5, 0.82, 0);
-        bx(g, 0.05, 0.12, 0.2, "#ffe9a8", 1.06, 0.55, 0.3, true); bx(g, 0.05, 0.12, 0.2, "#ffe9a8", 1.06, 0.55, -0.3, true);
-        bx(g, 0.05, 0.1, 0.2, "#e45b5b", -1.06, 0.55, 0.3, true); bx(g, 0.05, 0.1, 0.2, "#e45b5b", -1.06, 0.55, -0.3, true);
-        bx(g, 0.08, 0.14, 1.04, d1, 1.08, 0.35, 0); bx(g, 0.08, 0.14, 1.04, d1, -1.08, 0.35, 0);
-        const wheels: THREE.Group[] = [];
-        for (const sx of [-0.7, 0.7]) for (const sz of [-0.5, 0.5]) {
-          const pv = new THREE.Group(); pv.position.set(sx, 0.27, sz); g.add(pv);
-          mesh(pv, new THREE.CylinderGeometry(0.27, 0.27, 0.18, 18), toon("#22252d")).rotation.x = Math.PI / 2;
-          mesh(pv, new THREE.CylinderGeometry(0.13, 0.13, 0.2, 14), toon("#c9ccd3")).rotation.x = Math.PI / 2;
-          bx(pv, 0.46, 0.05, 0.2, "#22252d", 0, 0, 0);
-          wheels.push(pv);
-        }
-        g.userData.wheels = wheels;
-        const riders: RiderHead[] = [];
-        for (const [hx, hz] of [[0.2, 0.25], [-0.3, 0.25]]) {
-          const hg = new THREE.Group(); hg.position.set(hx, 1.0, hz); hg.visible = false; g.add(hg);
-          const skinM = sph(hg, 0.11, "#f2c9a0", 0, 0, 0);
-          const hairM = mesh(hg, new THREE.SphereGeometry(0.118, 14, 10, 0, TAU, 0, 1.7), toon("#2b2118"), 0, 0.012, -0.004);
-          riders.push({ g: hg, skin: skinM, hair: hairM });
-        }
-        g.userData.riders = riders;
-        break;
-      }
-      case "box":
-        bx(g, 0.34, 0.3, 0.34, color, 0, 0.15, 0); bx(g, 0.07, 0.31, 0.35, "#f2c94c", 0, 0.15, 0); bx(g, 0.35, 0.07, 0.35, "#f2c94c", 0, 0.18, 0);
-        sph(g, 0.045, "#f2c94c", -0.05, 0.34, 0, 1.4, 0.8, 1); sph(g, 0.045, "#f2c94c", 0.05, 0.34, 0, 1.4, 0.8, 1);
-        break;
-      case "cake":
-        cyl(g, 0.3, 0.3, 0.03, "#eef0f4", 0, 0.015, 0); cyl(g, 0.22, 0.22, 0.16, "#f3d9a8", 0, 0.11, 0); cyl(g, 0.22, 0.22, 0.08, color, 0, 0.23, 0);
-        for (const a of [0, 2.1, 4.2]) {
-          cyl(g, 0.012, 0.012, 0.1, "#ffffff", Math.cos(a) * 0.11, 0.32, Math.sin(a) * 0.11);
-          sph(g, 0.02, "#ffb703", Math.cos(a) * 0.11, 0.39, Math.sin(a) * 0.11, 1, 1.5, 1);
-        }
-        break;
-      case "bag":
-        bx(g, 0.3, 0.36, 0.16, color, 0, 0.18, 0);
-        mesh(g, new THREE.TorusGeometry(0.08, 0.012, 6, 14, Math.PI), toon(d2), 0, 0.36, 0);
-        break;
-      case "ball":
-        sph(g, 0.16, "#ffffff", 0, 0.16, 0);
-        for (const [dx, dy, dz] of [[0, 1, 0], [1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, -1, 0]]) sph(g, 0.05, "#22252d", dx * 0.155, 0.16 + dy * 0.155, dz * 0.155);
-        break;
-      case "goal": {
-        cyl(g, 0.05, 0.05, 1.5, color, -1.2, 0.75, 0); cyl(g, 0.05, 0.05, 1.5, color, 1.2, 0.75, 0);
-        mesh(g, new THREE.CylinderGeometry(0.05, 0.05, 2.45, 12), toon(color), 0, 1.5, 0).rotation.z = Math.PI / 2;
-        const net = new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true, transparent: true, opacity: 0.5 });
-        const back = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 1.5, 17, 10), net); back.position.set(0, 0.75, -0.9); g.add(back);
-        for (const sx of [-1.2, 1.2]) { const sd = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 1.5, 6, 10), net); sd.rotation.y = Math.PI / 2; sd.position.set(sx, 0.75, -0.45); g.add(sd); }
-        break;
-      }
-      case "board":
-        bx(g, 0.06, 0.9, 0.06, "#6e5238", -0.95, 0.45, 0); bx(g, 0.06, 0.9, 0.06, "#6e5238", 0.95, 0.45, 0);
-        bx(g, 2.2, 1.2, 0.06, color, 0, 1.5, 0); bx(g, 2.04, 1.04, 0.02, "#2f4f45", 0, 1.5, 0.03);
-        bx(g, 2.2, 0.04, 0.1, color, 0, 0.88, 0.05);
-        bx(g, 1.0, 0.02, 0.01, "#ffffff", -0.3, 1.65, 0.045); bx(g, 0.7, 0.02, 0.01, "#ffffff", -0.45, 1.5, 0.045); bx(g, 0.9, 0.02, 0.01, "#ffffff", -0.35, 1.35, 0.045);
-        break;
-    }
-    return g;
-  };
-
-  // ---------- environment ----------
-  const skyTex = (stops: string[]) => {
-    const cv = document.createElement("canvas"); cv.width = 4; cv.height = 256;
-    const x = cv.getContext("2d") as CanvasRenderingContext2D;
-    const gr = x.createLinearGradient(0, 0, 0, 256), n = stops.length;
+  // ---------- environment, sky and light ----------
+  const skyTex = (stops: string[]) => k.tex(4, 256, c => {
+    const gr = c.createLinearGradient(0, 0, 0, 256), n = stops.length;
     stops.forEach((col, i) => gr.addColorStop((i / (n - 1)) * 0.5, col));
     gr.addColorStop(0.5, stops[n - 1]); gr.addColorStop(1, stops[n - 1]);
-    x.fillStyle = gr; x.fillRect(0, 0, 4, 256);
-    const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace;
-    return t;
-  };
-  const winTexture = (wall: string, win: string, lit: boolean) => {
-    const cv = document.createElement("canvas"); cv.width = cv.height = 64;
-    const x = cv.getContext("2d") as CanvasRenderingContext2D;
-    x.fillStyle = wall; x.fillRect(0, 0, 64, 64);
-    for (let r = 0; r < 2; r++) for (let q = 0; q < 2; q++) {
-      x.fillStyle = lit && (r * 3 + q * 5) % 3 !== 0 ? "#ffd86b" : win;
-      x.fillRect(8 + q * 28, 8 + r * 28, 18, 18);
-    }
-    const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace;
-    t.wrapS = t.wrapT = THREE.RepeatWrapping;
-    return t;
-  };
-  const labelTex = (text: string, bg: string) => {
-    const cv = document.createElement("canvas"); cv.width = 256; cv.height = 64;
-    const x = cv.getContext("2d") as CanvasRenderingContext2D;
-    x.fillStyle = bg; x.fillRect(0, 0, 256, 64);
-    x.fillStyle = "#ffffff"; x.font = "700 36px system-ui, sans-serif"; x.textAlign = "center"; x.textBaseline = "middle";
-    x.fillText(text, 128, 34);
-    const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace;
-    return t;
-  };
-  const facade = (g: THREE.Group, w: number, h: number, d: number, x: number, z: number, wall: string, win: string, rx: number, ry: number) => {
-    const tex = winTexture(wall, win, false);
-    tex.repeat.set(rx, ry);
-    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshToonMaterial({ map: tex, gradientMap: gm }));
-    m.position.set(x, h / 2, z); m.castShadow = true; m.receiveShadow = true; g.add(m);
-    return m;
-  };
-
-  const buildPlace = (g: THREE.Group, place: "pitch" | "school" | "hospital") => {
-    if (place === "pitch") {
-      for (let i = -16; i < 16; i++) {
-        const st = new THREE.Mesh(new THREE.PlaneGeometry(8, 60), toon(i % 2 ? "#3f9a4a" : "#47a652"));
-        st.rotation.x = -Math.PI / 2; st.position.set(i * 8 + 4, 0.005, -6); st.receiveShadow = true; g.add(st);
-      }
-      bx(g, 130, 0.01, 0.12, "#ffffff", 0, 0.02, -12);
-      bx(g, 0.12, 0.01, 16, "#ffffff", 0, 0.02, -4);
-      const ring = mesh(g, new THREE.TorusGeometry(3, 0.05, 6, 40), toon("#ffffff"), 0, 0.02, -4);
-      ring.rotation.x = Math.PI / 2;
-      const palette = ["#e63946", "#f4a261", "#2a9d8f", "#457b9d", "#e9c46a", "#f1faee", "#8338ec", "#ff7aa2"].map(c => new THREE.Color(c));
-      const skins = ["#f2c9a0", "#8a5a3a", "#d9a066"].map(c => new THREE.Color(c));
-      for (let k = 0; k < 5; k++) bx(g, 90, (k + 1) * 0.9, 2.0, "#6f7586", 0, (k + 1) * 0.45, -15 - k * 2);
-      const n = 5 * 70;
-      const bodies = new THREE.InstancedMesh(new THREE.BoxGeometry(0.5, 0.55, 0.35), new THREE.MeshToonMaterial({ gradientMap: gm }), n);
-      const heads = new THREE.InstancedMesh(new THREE.SphereGeometry(0.18, 10, 8), new THREE.MeshToonMaterial({ gradientMap: gm }), n);
-      const m4 = new THREE.Matrix4();
-      let idx = 0;
-      for (let k = 0; k < 5; k++) for (let j = 0; j < 70; j++, idx++) {
-        const x = -43 + j * 1.25 + (k % 2) * 0.6, y = (k + 1) * 0.9, z = -15 - k * 2 + 0.3;
-        m4.makeTranslation(x, y + 0.3, z); bodies.setMatrixAt(idx, m4);
-        bodies.setColorAt(idx, palette[Math.floor(rnd(idx, 1) * palette.length)]);
-        m4.makeTranslation(x, y + 0.75, z); heads.setMatrixAt(idx, m4);
-        heads.setColorAt(idx, skins[Math.floor(rnd(idx, 2) * skins.length)]);
-      }
-      bodies.instanceMatrix.needsUpdate = true; heads.instanceMatrix.needsUpdate = true;
-      if (bodies.instanceColor) bodies.instanceColor.needsUpdate = true;
-      if (heads.instanceColor) heads.instanceColor.needsUpdate = true;
-      g.add(bodies, heads);
-      const boards = ["#2f6fdc", "#e63946", "#f4a261", "#2a9d8f"];
-      for (let i = 0; i < 22; i++) bx(g, 4, 0.9, 0.1, boards[i % 4], -42 + i * 4, 0.45, -13);
-      for (const sx of [-30, 30]) { cyl(g, 0.15, 0.2, 14, "#3a3f4b", sx, 7, -22); bx(g, 3, 0.8, 0.3, "#fff3b0", sx, 14.2, -21.8, true); }
-    } else if (place === "school") {
-      facade(g, 26, 8, 6, 0, -16, "#d9a15f", "#f4f1ea", 8, 3);
-      bx(g, 27, 0.8, 7, "#9b4d3a", 0, 8.4, -16);
-      bx(g, 4, 3, 1, "#7a5c3e", 0, 1.5, -12.8);
-      const sign = new THREE.Mesh(new THREE.PlaneGeometry(6, 1.5), new THREE.MeshBasicMaterial({ map: labelTex("SCHOOL", "#2f4f6f") }));
-      sign.position.set(0, 6.4, -12.95); g.add(sign);
-      cyl(g, 0.05, 0.05, 7, "#6e5238", 9, 3.5, -12.5); bx(g, 1.2, 0.8, 0.05, "#e63946", 9.6, 6.6, -12.5);
-      for (const sx of [-18, 18]) {
-        const tg = new THREE.Group();
-        cyl(tg, 0.14, 0.2, 1.2, "#6b4a2f", 0, 0.6, 0); sph(tg, 0.9, "#4f9a52", 0, 1.9, 0);
-        tg.position.set(sx, 0, -13); g.add(tg);
-      }
-    } else {
-      facade(g, 30, 10, 7, 0, -17, "#eef3f8", "#9ec9e8", 10, 3);
-      bx(g, 31, 0.5, 7.5, "#cfd8e3", 0, 10.2, -17);
-      bx(g, 6, 0.3, 3, "#6c8aa8", 0, 3.2, -12.5);
-      bx(g, 0.2, 3, 0.2, "#6c8aa8", -2.8, 1.6, -11.2); bx(g, 0.2, 3, 0.2, "#6c8aa8", 2.8, 1.6, -11.2);
-      bx(g, 3.6, 2.6, 0.1, "#cfe7f7", 0, 1.3, -13.6);
-      bx(g, 3.4, 3.4, 0.4, "#ffffff", 0, 12.2, -17);
-      bx(g, 0.9, 3, 0.45, "#d62839", 0, 12.2, -16.75); bx(g, 3, 0.9, 0.45, "#d62839", 0, 12.2, -16.75);
-      const path = new THREE.Mesh(new THREE.PlaneGeometry(60, 3), toon("#c9ced6"));
-      path.rotation.x = -Math.PI / 2; path.position.set(0, 0.012, -8.5); path.receiveShadow = true; g.add(path);
-      for (const sx of [-12, 12]) { const tg = new THREE.Group(); cyl(tg, 0.14, 0.2, 1.2, "#6b4a2f", 0, 0.6, 0); sph(tg, 0.9, "#4f9a52", 0, 1.9, 0); tg.position.set(sx, 0, -10); g.add(tg); }
-    }
-  };
-
-  let envGroup: THREE.Group | null = null;
+    c.fillStyle = gr; c.fillRect(0, 0, 4, 256);
+  });
+  let env: Env | null = null;
   let envTheme: ThemeId | null = null;
   let sky: THREE.Mesh | null = null;
+  let skyExtras: THREE.Group | null = null;
 
-  const buildEnv = (theme: ThemeId) => {
-    if (envGroup) { scene3.remove(envGroup); disposeObj(envGroup); }
-    const cfg = ENV[theme];
-    const g = new THREE.Group(); envGroup = g; scene3.add(g);
+  // ---------- editor camera (the world stays put, the camera moves around it) ----------
+  const ed = { az: 0.55, el: 0.55, dist: 20, tx: 0, ty: 1, tz: -3 };
+  const placeEdCam = () => {
+    const ce = Math.cos(ed.el);
+    edCam.position.set(ed.tx + Math.sin(ed.az) * ce * ed.dist, ed.ty + Math.sin(ed.el) * ed.dist, ed.tz + Math.cos(ed.az) * ce * ed.dist);
+    edCam.lookAt(ed.tx, ed.ty, ed.tz);
+    edCam.updateMatrixWorld();
+  };
+  const resetEdCam = () => {
+    const b = env?.bounds;
+    if (b) {
+      ed.tx = (b.minX + b.maxX) / 2; ed.tz = (b.minZ + b.maxZ) / 2; ed.ty = 1;
+      ed.dist = Math.max(b.maxX - b.minX, b.maxZ - b.minZ) * 1.1;
+    } else { ed.tx = 0; ed.tz = -6; ed.ty = 1; ed.dist = 24; }
+    ed.az = 0.55; ed.el = 0.55;
+  };
+
+  const applyEnv = (theme: ThemeId) => {
+    if (env) { scene3.remove(env.group); k.dispose(env.group); }
+    if (skyExtras) { scene3.remove(skyExtras); k.dispose(skyExtras); }
+    env = buildEnv(k, theme);
+    scene3.add(env.group);
+    envTheme = theme;
+    const L = env.light;
 
     if (!sky) {
       sky = new THREE.Mesh(new THREE.SphereGeometry(120, 24, 16), new THREE.MeshBasicMaterial({ side: THREE.BackSide, fog: false }));
@@ -477,85 +205,37 @@ export function createRenderer3D(): Renderer3D {
     }
     const skyMat = sky.material as THREE.MeshBasicMaterial;
     if (skyMat.map) skyMat.map.dispose();
-    skyMat.map = skyTex(cfg.sky); skyMat.needsUpdate = true;
-    scene3.fog = new THREE.Fog(new THREE.Color(cfg.sky[cfg.sky.length - 1]), cfg.room ? 60 : 45, cfg.room ? 120 : 110);
+    skyMat.map = skyTex(L.sky); skyMat.needsUpdate = true;
+    scene3.fog = new THREE.Fog(new THREE.Color(L.sky[L.sky.length - 1]), L.room ? 90 : 45, L.room ? 170 : 110);
 
-    hemi.color.set(cfg.hemi[0]); hemi.groundColor.set(cfg.hemi[1]); hemi.intensity = cfg.hemi[2];
-    if (cfg.sun) {
-      const dir = new THREE.Vector3(cfg.sun.dir[0], cfg.sun.dir[1], cfg.sun.dir[2]).normalize();
-      sun.color.set(cfg.sun.color); sun.intensity = cfg.sun.intensity;
-      sun.position.copy(dir.clone().multiplyScalar(30)); sun.target.position.set(0, 0, -2);
-      const disc = new THREE.Mesh(new THREE.SphereGeometry(cfg.sun.size, 16, 12), new THREE.MeshBasicMaterial({ color: cfg.sun.disc, fog: false }));
-      disc.position.copy(dir.clone().multiplyScalar(100)); g.add(disc);
+    hemi.color.set(L.hemi[0]); hemi.groundColor.set(L.hemi[1]); hemi.intensity = L.hemi[2];
+    skyExtras = new THREE.Group(); scene3.add(skyExtras);
+    const b = env.bounds;
+    const cx = b ? (b.minX + b.maxX) / 2 : 0, cz = b ? (b.minZ + b.maxZ) / 2 : -2;
+    sun.target.position.set(cx, 0, cz);
+    if (L.sun) {
+      const dir = new THREE.Vector3(L.sun.dir[0], L.sun.dir[1], L.sun.dir[2]).normalize();
+      sun.color.set(L.sun.color); sun.intensity = L.sun.intensity;
+      sun.position.set(cx, 0, cz).add(dir.clone().multiplyScalar(30));
+      const disc = new THREE.Mesh(new THREE.SphereGeometry(L.sun.size, 16, 12), new THREE.MeshBasicMaterial({ color: L.sun.disc, fog: false }));
+      disc.position.copy(dir.clone().multiplyScalar(100)); skyExtras.add(disc);
     } else {
-      sun.color.set("#ffffff"); sun.intensity = 0.5; sun.position.set(2, 8, 6); sun.target.position.set(0, 0, -2);
+      sun.color.set("#ffffff"); sun.intensity = 0.5; sun.position.set(cx + 2, 9, cz + 6);
     }
-    roomLight.intensity = cfg.room ? 45 : 0;
-
-    if (cfg.stars) {
+    if (L.stars) {
       const pts: number[] = [];
       for (let i = 0; i < 260; i++) {
-        const u = rnd(i, 1) * TAU, v = 0.15 + rnd(i, 2) * 0.85, r = 110, q = Math.sqrt(1 - v * v);
+        const u = (((i * 127.1) % 1000) / 1000) * TAU, v = 0.15 + (((i * 311.7) % 1000) / 1000) * 0.85, r = 110, q = Math.sqrt(1 - v * v);
         pts.push(Math.cos(u) * q * r, v * r, Math.sin(u) * q * r);
       }
       const geo = new THREE.BufferGeometry();
       geo.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
-      g.add(new THREE.Points(geo, new THREE.PointsMaterial({ color: 0xffffff, size: 2, sizeAttenuation: false, fog: false })));
+      skyExtras.add(new THREE.Points(geo, new THREE.PointsMaterial({ color: 0xffffff, size: 2, sizeAttenuation: false, fog: false })));
     }
-
-    if (!cfg.room) {
-      const gr = new THREE.Mesh(new THREE.CircleGeometry(130, 48), toon(cfg.ground));
-      gr.rotation.x = -Math.PI / 2; gr.receiveShadow = true; g.add(gr);
-
-      if (cfg.place) buildPlace(g, cfg.place);
-
-      if (cfg.road) {
-        const road = new THREE.Mesh(new THREE.PlaneGeometry(260, 3.6), toon("#4a4f5a"));
-        road.rotation.x = -Math.PI / 2; road.position.set(0, 0.01, -4); road.receiveShadow = true; g.add(road);
-        for (const zz of [-6.6, -1.4]) {
-          const sw = new THREE.Mesh(new THREE.PlaneGeometry(260, 1.2), toon("#c9c4b8"));
-          sw.rotation.x = -Math.PI / 2; sw.position.set(0, 0.015, zz); sw.receiveShadow = true; g.add(sw);
-        }
-        for (let i = -40; i < 40; i++) bx(g, 1.4, 0.01, 0.12, "#f2e6a0", i * 3.2, 0.02, -4);
-      }
-
-      if (cfg.bld) {
-        const texA = winTexture(cfg.bld[0], cfg.bld[1], false), texB = winTexture(cfg.bld[0], cfg.bld[1], !!cfg.lit);
-        for (let i = 0; i < 28; i++) {
-          const w = 3 + rnd(i, 1) * 3, h = 5 + rnd(i, 2) * 11, d = 3 + rnd(i, 3) * 3;
-          const x = -52 + i * 3.8 + rnd(i, 4) * 1.5, z = -17 - (i % 3) * 6 - rnd(i, 5) * 3;
-          const tex = (cfg.lit && rnd(i, 6) > 0.25 ? texB : texA).clone();
-          tex.needsUpdate = true; tex.repeat.set(Math.round(w * 1.1), Math.round(h * 0.9));
-          const mat = new THREE.MeshToonMaterial({ map: tex, gradientMap: gm });
-          if (cfg.lit) { mat.emissive = new THREE.Color("#ffffff"); mat.emissiveMap = tex; mat.emissiveIntensity = 0.55; }
-          const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
-          m.position.set(x, h / 2, z); m.castShadow = true; m.receiveShadow = true; g.add(m);
-        }
-      }
-
-      if (cfg.trees) {
-        for (let i = 0; i < 40; i++) {
-          const x = -45 + rnd(i, 1) * 90, z = -12 - rnd(i, 2) * 28, s = 0.8 + rnd(i, 3) * 0.9;
-          const tg = new THREE.Group();
-          cyl(tg, 0.14, 0.2, 1.2, "#6b4a2f", 0, 0.6, 0);
-          sph(tg, 0.9, rnd(i, 4) > 0.5 ? "#4f9a52" : "#3f8a49", 0, 1.9, 0);
-          sph(tg, 0.7, "#5aa85d", 0.4, 1.6, 0.2);
-          tg.position.set(x, 0, z); tg.scale.setScalar(s); g.add(tg);
-        }
-      }
-    } else {
-      const wall = "#eadfce";
-      bx(g, 18, 0.2, 16, cfg.ground, 0, -0.1, -2);
-      for (let i = -10; i <= 10; i++) bx(g, 0.02, 0.01, 16, dk(cfg.ground, 0.8), i * 0.85, 0.005, -2);
-      bx(g, 18, 5, 0.2, wall, 0, 2.5, -10);
-      bx(g, 0.2, 5, 16, dk(wall, 0.95), -9, 2.5, -2);
-      bx(g, 0.2, 5, 16, dk(wall, 0.95), 9, 2.5, -2);
-      bx(g, 18, 0.18, 0.12, "#cfc2ae", 0, 0.09, -9.85);
-      bx(g, 2.6, 1.8, 0.1, "#ffffff", -3, 2.6, -9.85);
-      bx(g, 2.4, 1.6, 0.05, "#bfe3ff", -3, 2.6, -9.8, true);
-      bx(g, 1.2, 0.9, 0.08, "#7a5c3e", 3.5, 2.8, -9.88); bx(g, 1.05, 0.75, 0.05, "#f3d9a8", 3.5, 2.8, -9.84);
-      bx(g, 1.4, 0.9, 0.08, "#7a5c3e", 6, 2.7, -9.88); bx(g, 1.25, 0.75, 0.05, "#c9855a", 6, 2.7, -9.84);
-    }
+    const half = b ? Math.max(b.maxX - b.minX, b.maxZ - b.minZ) / 2 + 2 : 14;
+    const sc = sun.shadow.camera;
+    sc.left = -half; sc.right = half; sc.top = half; sc.bottom = -half; sc.updateProjectionMatrix();
+    resetEdCam();
   };
 
   // ---------- keep 3D objects in sync with the scene ----------
@@ -565,34 +245,34 @@ export function createRenderer3D(): Renderer3D {
     s.actors.forEach((a, i) => {
       const sig = sigOf(a.def), cur = rigs[i];
       if (!cur || cur.sig !== sig) {
-        if (cur) { scene3.remove(cur.root); disposeObj(cur.root); }
+        if (cur) { scene3.remove(cur.root); k.dispose(cur.root); }
         const r = buildCharacter(a.def);
         r.sig = sig; r.root.scale.setScalar(a.def.height / 300);
         scene3.add(r.root); rigs[i] = r;
       }
     });
-    for (let i = s.actors.length; i < rigs.length; i++) { const r = rigs[i]; if (r) { scene3.remove(r.root); disposeObj(r.root); } }
+    for (let i = s.actors.length; i < rigs.length; i++) { const r = rigs[i]; if (r) { scene3.remove(r.root); k.dispose(r.root); } }
     rigs.length = s.actors.length;
   };
-
   const propObjs: ({ sig: string; g: THREE.Group } | null)[] = [];
   const syncProps = (s: Scene) => {
     s.props.forEach((p, i) => {
       const sig = p.kind + "|" + p.color, cur = propObjs[i];
       if (!cur || cur.sig !== sig) {
-        if (cur) { scene3.remove(cur.g); disposeObj(cur.g); }
-        const g = buildProp(p.kind, p.color);
+        if (cur) { scene3.remove(cur.g); k.dispose(cur.g); }
+        const g = buildProp3D(k, p.kind, p.color);
         scene3.add(g); propObjs[i] = { sig, g };
       }
     });
-    for (let i = s.props.length; i < propObjs.length; i++) { const o = propObjs[i]; if (o) { scene3.remove(o.g); disposeObj(o.g); } }
+    for (let i = s.props.length; i < propObjs.length; i++) { const o = propObjs[i]; if (o) { scene3.remove(o.g); k.dispose(o.g); } }
     propObjs.length = s.props.length;
   };
 
   // ---------- posing ----------
   const poseRig = (rig: Rig, st: ReturnType<typeof actorState>, jump: boolean, dt: number) => {
     const p = st.pose, clip = st.clip, side = st.view === "side";
-    rig.root.position.set(toX(st.x), 0, toZ(st.depth));
+    const lie = p.lie;
+    rig.root.position.set(toX(st.x) + lie * 0.9, 0, toZ(st.depth));
 
     let target = 0;
     if (side) target = st.face > 0 ? Math.PI / 2 : -Math.PI / 2;
@@ -603,8 +283,9 @@ export function createRenderer3D(): Renderer3D {
       const dA = Math.atan2(Math.sin(target - rig.angle), Math.cos(target - rig.angle));
       rig.angle += dA * (1 - Math.exp(-dt * 12));
     }
-    rig.root.rotation.y = rig.angle;
-    rig.body.position.y = -p.bob * 0.0058 - p.sit * 0.4;
+    rig.root.rotation.y = lerp(rig.angle, Math.PI / 2, lie);
+    rig.body.position.y = -p.bob * 0.0058 - p.sit * 0.4 + lie * 0.78;
+    rig.body.rotation.x = -lie * Math.PI / 2;
     rig.torso.rotation.x = p.lean * D;
 
     const setArm = (sh: THREE.Group, el: THREE.Group, aU: number, aB: number, sgn: number) => {
@@ -641,10 +322,10 @@ export function createRenderer3D(): Renderer3D {
     rig.mSmile.visible = !talking && st.expr === "happy";
     rig.mFrown.visible = !talking && (st.expr === "sad" || st.expr === "angry");
     rig.mFlat.visible = !talking && !rig.mSmile.visible && !rig.mFrown.visible;
-    rig.brows.forEach((b, k) => {
-      const s = k === 0 ? -1 : 1;
-      b.rotation.z = st.expr === "angry" ? s * 0.35 : st.expr === "sad" ? -s * 0.35 : 0;
-      b.position.y = st.expr === "surprised" ? 0.066 : st.expr === "sad" ? 0.056 : st.expr === "happy" ? 0.058 : 0.052;
+    rig.brows.forEach((br, i) => {
+      const s = i === 0 ? -1 : 1;
+      br.rotation.z = st.expr === "angry" ? s * 0.35 : st.expr === "sad" ? -s * 0.35 : 0;
+      br.position.y = st.expr === "surprised" ? 0.066 : st.expr === "sad" ? 0.056 : st.expr === "happy" ? 0.058 : 0.052;
     });
     rig.eyes.forEach(e => {
       e.g.scale.y = st.expr === "happy" ? 0.18 : Math.max(0.08, 1 - p.blink);
@@ -653,7 +334,7 @@ export function createRenderer3D(): Renderer3D {
     rig.laptop.visible = clip === "type";
   };
 
-  // ---------- camera (normal shot follows the 2D camera; orbit only when a shot asks for it) ----------
+  // ---------- director camera (the 2D camera lines, plus 360 orbit shots when asked) ----------
   const placeCamera = (s: Scene, t: number) => {
     const c2 = camAt(s, t);
     const tx = toX(c2.x), ty = cl((FOOT - c2.y) / 200, 0.5, 2.2);
@@ -669,9 +350,7 @@ export function createRenderer3D(): Renderer3D {
           if (ent) {
             const pe = posAt(ent, t, s.props);
             const w = sm(cl((t - sh.t0) / 0.8, 0, 1)) * (1 - sm(cl((t - (sh.t1 - 0.8)) / 0.8, 0, 1)));
-            ox = lerp(tx, toX(pe.x), w);
-            oz = lerp(0, toZ(pe.depth), w);
-            oy = lerp(ty, 1.15, w);
+            ox = lerp(tx, toX(pe.x), w); oz = lerp(0, toZ(pe.depth), w); oy = lerp(ty, 1.15, w);
           }
         }
       }
@@ -681,16 +360,58 @@ export function createRenderer3D(): Renderer3D {
     camera.updateMatrixWorld();
   };
 
+  // ---------- selection highlight ----------
+  const helper = new THREE.BoxHelper(new THREE.Object3D(), 0xffd400);
+  (helper.material as THREE.LineBasicMaterial).depthTest = false;
+  helper.visible = false; helper.renderOrder = 10; scene3.add(helper);
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.9, 1, 40), new THREE.MeshBasicMaterial({ color: 0xffd400, side: THREE.DoubleSide, depthTest: false }));
+  ring.rotation.x = -Math.PI / 2; ring.visible = false; ring.renderOrder = 10; scene3.add(ring);
+  const box = new THREE.Box3(), size = new THREE.Vector3(), center = new THREE.Vector3();
+
+  // ---------- picking ----------
+  const ray = new THREE.Raycaster();
+  const ndc = (nx: number, ny: number) => new THREE.Vector2(nx * 2 - 1, -(ny * 2 - 1));
+  const pick = (nx: number, ny: number): Sel | null => {
+    ray.setFromCamera(ndc(nx, ny), edCam);
+    const roots: { obj: THREE.Object3D; sel: Sel }[] = [];
+    propObjs.forEach((o, i) => { if (o && o.g.visible) roots.push({ obj: o.g, sel: { kind: "prop", index: i } }); });
+    rigs.forEach((r, i) => { if (r && r.root.visible) roots.push({ obj: r.root, sel: { kind: "actor", index: i } }); });
+    const hits = ray.intersectObjects(roots.map(r => r.obj), true);
+    for (const h of hits) {
+      let o: THREE.Object3D | null = h.object;
+      while (o) { const f = roots.find(r => r.obj === o); if (f) return f.sel; o = o.parent; }
+    }
+    return null;
+  };
+  const ground = (nx: number, ny: number, y = 0) => {
+    ray.setFromCamera(ndc(nx, ny), edCam);
+    const p = new THREE.Vector3();
+    return ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -y), p) ? { X: p.x, Z: p.z } : null;
+  };
+
   // ---------- frame ----------
   let lastNow = performance.now(), lastT = 0;
-  const render = (c: CanvasRenderingContext2D, s: Scene, t: number, o: { theme: ThemeId; bubbles: boolean }) => {
-    if (envTheme !== o.theme) { buildEnv(o.theme); envTheme = o.theme; }
+  const render = (c: CanvasRenderingContext2D, s0: Scene, t: number, o: RenderOpts) => {
+    if (envTheme !== o.theme) applyEnv(o.theme);
+    const e = env as Env;
+    for (const [name, objs] of Object.entries(e.parts)) for (const ob of objs) ob.visible = !o.hidden.includes(name);
+
+    // the editor shows the set as laid out (everybody present, standing); the film view follows the script
+    const s: Scene = o.editor
+      ? {
+          ...s0,
+          actors: s0.actors.map(a => ({ ...a, actions: [], keys: [], startHidden: false })),
+          props: s0.props.map(p => ({ ...p, actions: [], holds: [], startHidden: false })),
+          shots: [],
+        }
+      : s0;
     syncRigs(s); syncProps(s);
 
     const now = performance.now();
     let dt = (now - lastNow) / 1000; lastNow = now;
     const jump = Math.abs(t - lastT) > 0.25 || dt > 0.25;
     lastT = t; dt = cl(dt, 0, 0.1);
+    e.anim(t, dt, o.alive);
 
     const talkers: { x: number; y: number; z: number; say: string }[] = [];
     const sits: number[] = [];
@@ -714,6 +435,7 @@ export function createRenderer3D(): Renderer3D {
       if (!vis) return;
       const pl = propPlace(s, p, t);
       const holder = pl.held ? rigs[pl.by] : undefined;
+      const rotY = (p.rot ?? 0) * D;
       if (pl.held && holder) {
         po.g.position.set(
           holder.root.position.x + Math.sin(holder.angle) * 0.32 * holder.s,
@@ -723,34 +445,48 @@ export function createRenderer3D(): Renderer3D {
       } else {
         po.g.position.set(toX(pl.x), pl.lift / UNIT, toZ(pl.depth));
         const dir = (p.flip ? -1 : 1) * (p.kind === "car" ? pl.face : 1);
-        po.g.rotation.y = p.kind === "car" ? (dir > 0 ? 0 : Math.PI) : p.flip ? Math.PI : 0;
+        po.g.rotation.y = p.kind === "car" ? (dir > 0 ? 0 : Math.PI) + rotY : (p.flip ? Math.PI : 0) + rotY;
       }
       po.g.scale.setScalar(p.scale);
 
       const wheels = po.g.userData.wheels as THREE.Group[] | undefined;
-      if (wheels) {
-        const dir = (p.flip ? -1 : 1) * pl.face;
-        for (const w of wheels) w.rotation.z = -(toX(pl.x) * dir) / 0.27;
-      }
+      if (wheels) { const dir = (p.flip ? -1 : 1) * pl.face; for (const w of wheels) w.rotation.z = -(toX(pl.x) * dir) / 0.27; }
       const panel = po.g.userData.panel as THREE.Group | undefined;
       if (panel) panel.rotation.y = pl.open * 1.45;
+      const anim = po.g.userData.anim as ((a: AnimIn) => void) | undefined;
+      if (anim) anim({ t, dt, alive: o.alive, power: pl.power, open: pl.open });
       const riders = po.g.userData.riders as RiderHead[] | undefined;
       if (riders) {
         const inside = s.actors.filter(a => a.actions.some(q => q.ride === i && t >= q.t0 && t < q.t1));
-        riders.forEach((r, k) => {
-          const a = inside[k];
+        riders.forEach((r, n) => {
+          const a = inside[n];
           r.g.visible = !!a;
           if (a) { r.skin.material = toon(a.def.skin); r.hair.material = toon(a.def.hair); }
         });
       }
     });
 
-    placeCamera(s, t);
-    if (sky) sky.position.copy(camera.position);
-    renderer.render(scene3, camera);
+    // highlight the selected object (editor only)
+    const sel = o.editor ? o.selection : null;
+    const target = sel ? (sel.kind === "prop" ? propObjs[sel.index]?.g : rigs[sel.index]?.root) : undefined;
+    if (target) {
+      helper.visible = true; helper.setFromObject(target);
+      box.setFromObject(target); box.getSize(size); box.getCenter(center);
+      ring.visible = true; ring.position.set(center.x, 0.03, center.z); ring.scale.setScalar(Math.max(size.x, size.z) / 2 + 0.25);
+    } else { helper.visible = false; ring.visible = false; }
+
+    if (o.editor) {
+      placeEdCam();
+      if (sky) sky.position.copy(edCam.position);
+      renderer.render(scene3, edCam);
+    } else {
+      placeCamera(s, t);
+      if (sky) sky.position.copy(camera.position);
+      renderer.render(scene3, camera);
+    }
     c.drawImage(canvas, 0, 0, W, H);
 
-    if (o.bubbles) {
+    if (o.bubbles && !o.editor) {
       for (const q of talkers) {
         const v = new THREE.Vector3(q.x, q.y, q.z).project(camera);
         if (v.z > -1 && v.z < 1) drawBubble(c, q.say, (v.x * 0.5 + 0.5) * W, (-v.y * 0.5 + 0.5) * H);
@@ -760,6 +496,24 @@ export function createRenderer3D(): Renderer3D {
 
   return {
     render,
-    dispose() { disposeObj(scene3); renderer.dispose(); },
+    orbit(dx, dy) { ed.az -= dx * 0.008; ed.el = cl(ed.el + dy * 0.006, 0.03, 1.5); },
+    zoom(f) { ed.dist = cl(ed.dist * f, 1.5, 120); },
+    pan(dx, dy) {
+      const kk = ed.dist * 0.0016;
+      const rx = Math.cos(ed.az), rz = -Math.sin(ed.az), fx = -Math.sin(ed.az), fz = -Math.cos(ed.az);
+      ed.tx += -rx * dx * kk + fx * dy * kk;
+      ed.tz += -rz * dx * kk + fz * dy * kk;
+    },
+    resetEditorCam: resetEdCam,
+    pick, ground,
+    info() {
+      const parts = env
+        ? Object.entries(env.parts)
+            .filter(([, os]) => os.some(o2 => (o2 as THREE.Group).children.length > 0 || (o2 as THREE.Mesh).isMesh || (o2 as THREE.Light).isLight))
+            .map(([n]) => n)
+        : [];
+      return { parts, bounds: env ? env.bounds : null, height: env ? env.height : 5 };
+    },
+    dispose() { k.dispose(scene3); renderer.dispose(); },
   };
 }
