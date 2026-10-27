@@ -500,7 +500,8 @@ const exportVideo = async () => {
       <main className="mx-auto grid max-w-6xl gap-4 p-3 lg:grid-cols-[1.4fr_1fr]">
         <section className="sticky top-0 z-20 -mx-3 space-y-2 bg-[#0b0d14]/95 px-3 pb-2 pt-1 backdrop-blur lg:top-3 lg:mx-0 lg:self-start lg:px-0">
           <div className="overflow-hidden rounded-2xl ring-1 ring-white/10" style={{ boxShadow: "0 20px 60px rgba(139,92,246,0.18)" }}>
-            <canvas ref={cv} width={W} height={H} className="block w-full bg-black" />
+              <canvas ref={cv} width={W} height={H} className="block w-full bg-black"
+              style={{ touchAction: editor && mode === "3d" ? "none" : "auto" }} {...ed.handlers} />
           </div>
           {mode === "3d" && !r3ready && <p className="text-xs text-slate-400">Loading 3D...</p>}
           {note3 && <p className="text-xs text-amber-400">{note3}</p>}
@@ -547,7 +548,7 @@ const exportVideo = async () => {
         <section className="min-w-0 space-y-3">
           <div className="flex gap-1 overflow-x-auto rounded-2xl border border-white/10 bg-white/[0.03] p-1">
             {tabBtn("script", "🎬 Script")}{tabBtn("stage", "🎭 Stage")}{tabBtn("look", "🎨 Character")}
-            {tabBtn("pose", "🕺 Pose")}{tabBtn("timeline", "⏱ Timeline")}{tabBtn("film", "🎞 Film")}
+            {tabBtn("pose", "🕺 Pose")}{tabBtn("timeline", "⏱ Timeline")}{tabBtn("env", "🌍 Environment")}{tabBtn("film", "🎞 Film")}
           </div>
 
           {tab === "script" && (
@@ -585,6 +586,7 @@ const exportVideo = async () => {
                 <p>Doors and cars: <span className="text-slate-200">Sam: enter through the Door and walk to Mina</span>, <span className="text-slate-200">Sam: get in the Car and drive off to the right</span>, <span className="text-slate-200">get out of the Car</span>.</p>
                 <p>360° camera (3D mode only, only when you write it): <span className="text-slate-200">Camera: orbit around Sam for 5 seconds</span>, <span className="text-slate-200">Camera: wait 3 seconds then orbit around Sam for 5 seconds</span>. Add <span className="text-slate-200">left</span> to spin the other way.</p>
                 <p>Voices: every quoted line is spoken by the voice named like the character. Change a voice in the Character tab. Speech bubbles last as long as the audio.</p>
+                <p>New: <span className="text-slate-200">Camera: zoom on Sam 50 percent</span> (zooms in half way, then returns after 3 seconds; add <span className="text-slate-200">for 5 seconds</span> or <span className="text-slate-200">and stay</span>), <span className="text-slate-200">Sam: enter from the front</span>, <span className="text-slate-200">walk out toward the camera</span>, <span className="text-slate-200">Sam: lie on the Bed</span>, <span className="text-slate-200">TV: turn off</span>, <span className="text-slate-200">Fan: turn on</span>, <span className="text-slate-200">Curtains: close</span>, <span className="text-slate-200">Door: open</span>.</p>
               </div>
             </div>
           )}
@@ -615,7 +617,7 @@ const exportVideo = async () => {
                         <button onClick={() => remove(i)} className="px-2 text-red-400">✕</button>
                       </div>
                       <label className="mt-2 block text-xs text-slate-400">Position
-                        <input type="range" min={60} max={W - 60} value={c.x} onChange={e => patch(i, { x: +e.target.value })} className="w-full accent-violet-500" />
+                      <input type="range" min={-600} max={W + 600} value={c.x} onChange={e => patch(i, { x: +e.target.value })} className="w-full accent-violet-500" />
                       </label>
                       <label className="block text-xs text-slate-400">Depth (front to back)
                         <input type="range" min={0} max={1} step={0.05} value={c.depth} onChange={e => patch(i, { depth: +e.target.value })} className="w-full accent-violet-500" />
@@ -649,7 +651,7 @@ const exportVideo = async () => {
                         <button onClick={() => removeProp(i)} className="px-2 text-red-400">✕</button>
                       </div>
                       <label className="mt-2 block text-xs text-slate-400">Position
-                        <input type="range" min={-200} max={W + 200} value={p.x} onChange={e => patchProp(i, { x: +e.target.value })} className="w-full accent-violet-500" />
+                        <input type="range" min={-900} max={W + 900} value={p.x} onChange={e => patchProp(i, { x: +e.target.value })} className="w-full accent-violet-500" />
                       </label>
                       <label className="block text-xs text-slate-400">Depth (front to back)
                         <input type="range" min={0} max={1} step={0.05} value={p.depth} onChange={e => patchProp(i, { depth: +e.target.value })} className="w-full accent-violet-500" />
@@ -688,6 +690,18 @@ const exportVideo = async () => {
               </>)
             : needActor)}
 
+          {tab === "env" && (
+            <EnvPanel
+              mode={mode} setMode={setMode}
+              editor={editor} setEditor={on => { if (on) { stop(); } else { setSelection(null); } setEditor(on); }}
+              alive={alive} setAlive={setAlive} grid={grid} setGrid={setGrid} wallSnap={wallSnap} setWallSnap={setWallSnap}
+              parts={envInfo.parts} hidden={hidden} toggleHidden={toggleHidden}
+              selected={selInfo} onRot={rotSel} onScale={scaleSel} onLift={liftSel} onDup={dupSel} onDel={delSel}
+              onDeselect={() => setSelection(null)}
+              onAdd={addEnvProp} onFurnish={furnish} onClear={clearProps} onResetCam={() => r3.current?.resetEditorCam()}
+              propCount={props.length}
+            />
+          )}
           {tab === "film" && <FilmPanel current={snapshot} onLoad={loadScene} />}
 
           {tab === "timeline" && (
