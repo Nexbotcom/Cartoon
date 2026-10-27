@@ -8,6 +8,7 @@ export interface SceneFile {
   cast: CastMember[];
   props: PropMember[];
   script: string;
+  hidden?: string[];   // hidden environment parts (walls, ceiling...)
 }
 
 const KEY = "toon:scenes";
@@ -37,3 +38,6 @@ export function importScenes(json: string): SceneFile[] {
     return !!o && typeof o.name === "string" && typeof o.script === "string" && Array.isArray(o.cast) && Array.isArray(o.props);
   });
 }
+export interface AutoLayout { theme: ThemeId; props: PropMember[]; hidden?: string[] }
+export async function saveAuto(a: AutoLayout) { await set("toon:autosave", a); }
+export async function loadAuto(): Promise<AutoLayout | undefined> { return get<AutoLayout>("toon:autosave"); }
