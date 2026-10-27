@@ -21,14 +21,31 @@ export const PROP_LIST: { kind: PropKind; label: string; color: string; depth: n
   { kind: "ball", label: "Ball", color: "#ffffff", depth: 0.15, w: 45 },
   { kind: "goal", label: "Goal", color: "#ffffff", depth: 0.7, w: 360 },
   { kind: "board", label: "Board", color: "#8a6a4a", depth: 0.8, w: 240 },
+  { kind: "wardrobe", label: "Wardrobe", color: "#8a5a3a", depth: 0.6, w: 120 },
+  { kind: "fridge", label: "Fridge", color: "#e9eef5", depth: 0.6, w: 70 },
+  { kind: "counter", label: "Counter", color: "#a9744f", depth: 0.6, w: 220 },
+  { kind: "rug", label: "Rug", color: "#a55d4a", depth: 0.4, w: 260 },
+  { kind: "picture", label: "Picture", color: "#7a5c3e", depth: 0.9, w: 70 },
+  { kind: "clock", label: "Clock", color: "#7a5c3e", depth: 0.9, w: 52 },
+  { kind: "window", label: "Window", color: "#ffffff", depth: 0.9, w: 100 },
+  { kind: "curtains", label: "Curtains", color: "#c0405a", depth: 0.9, w: 160 },
+  { kind: "fan", label: "Fan", color: "#c9ccd3", depth: 0.5, w: 140 },
+  { kind: "locker", label: "Locker", color: "#5b7a9a", depth: 0.6, w: 52 },
+  { kind: "bin", label: "Bin", color: "#6b7280", depth: 0.3, w: 40 },
+  { kind: "bush", label: "Bush", color: "#4f9a52", depth: 0.5, w: 120 },
+  { kind: "fence", label: "Fence", color: "#c9a77c", depth: 0.6, w: 260 },
+  { kind: "crowd", label: "Crowd", color: "#ffffff", depth: 0.5, w: 260 },
+  { kind: "ivstand", label: "IV stand", color: "#9aa4b0", depth: 0.4, w: 50 },
 ];
 
 // where people can sit: x offsets (px) from the middle of the prop
 export const SEATS: Partial<Record<PropKind, number[]>> = { sofa: [-62, 62], chair: [0], bench: [-60, 60] };
 // height (px) of the surface where small things can be put down
-export const SURFACE: Partial<Record<PropKind, number>> = { table: 66, desk: 128, bench: 54, sofa: 80 };
+export const SURFACE: Partial<Record<PropKind, number>> = { table: 66, desk: 128, bench: 54, sofa: 80, counter: 92 };
+// default height (metres) for things that hang on a wall or from the ceiling
+export const DEFAULT_Y: Partial<Record<PropKind, number>> = { picture: 1.5, clock: 3.0, window: 1.0, curtains: 1.1, fan: 5 };
 
-export interface PropFx { open?: number; riders?: { skin: string; hair: string }[] }
+export interface PropFx { open?: number; riders?: { skin: string; hair: string }[]; power?: number; t?: number }
 
 const TAU = Math.PI * 2;
 const dk = (h: string, f: number) => {
@@ -109,7 +126,7 @@ export function drawProp(
       break;
     }
     case "lamp": {
-      circle(c, 0, -205, 92, "rgba(255,236,160,0.18)");
+      if ((fx.power ?? 1) > 0.5) circle(c, 0, -205, 92, "rgba(255,236,160,0.18)");
       c.fillStyle = "#3a3f4b"; c.beginPath(); c.ellipse(0, -4, 28, 8, 0, 0, TAU); c.fill();
       c.fillRect(-3, -190, 6, 186);
       c.beginPath(); c.moveTo(-34, -168); c.lineTo(34, -168); c.lineTo(22, -236); c.lineTo(-22, -236); c.closePath(); fl(c, color);
@@ -129,7 +146,7 @@ export function drawProp(
       c.fillStyle = "#8a6a4a"; c.fillRect(-84, -50, 168, 50);
       c.fillStyle = "#6e5238"; c.fillRect(-84, -26, 168, 4);
       rr(c, -100, -176, 200, 128, 8); fl(c, color);
-      rr(c, -92, -168, 184, 112, 4); fl(c, "#3a6ea5");
+      rr(c, -92, -168, 184, 112, 4); fl(c, (fx.power ?? 1) > 0.5 ? "#3a6ea5" : "#14161c");
       c.fillStyle = "rgba(255,255,255,0.12)";
       c.beginPath(); c.moveTo(-92, -168); c.lineTo(-20, -168); c.lineTo(-92, -90); c.closePath(); c.fill();
       break;
@@ -202,6 +219,96 @@ export function drawProp(
         for (let k = 0; k < 4; k++) { c.rotate(Math.PI / 4); c.beginPath(); c.moveTo(-14, 0); c.lineTo(14, 0); c.stroke(); }
         c.restore();
       }
+      break;
+    }
+    case "wardrobe": {
+      rr(c, -60, -200, 120, 200, 4); fl(c, color);
+      rr(c, -54, -192, 52, 184, 3); fl(c, d1); rr(c, 2, -192, 52, 184, 3); fl(c, d1);
+      circle(c, -10, -100, 4, "#f2c94c"); circle(c, 10, -100, 4, "#f2c94c");
+      break;
+    }
+    case "fridge": {
+      rr(c, -34, -180, 68, 180, 6); fl(c, "#e9eef5");
+      c.fillStyle = "#9aa4b0"; c.fillRect(-34, -118, 68, 3); c.fillRect(20, -165, 5, 36); c.fillRect(20, -105, 5, 60);
+      break;
+    }
+    case "counter": {
+      rr(c, -110, -88, 220, 88, 3); fl(c, color);
+      c.fillStyle = "#d9d4c7"; c.fillRect(-114, -98, 228, 10);
+      c.strokeStyle = d2; c.lineWidth = 2;
+      for (const k of [-55, 0, 55]) { c.beginPath(); c.moveTo(k, -88); c.lineTo(k, 0); c.stroke(); }
+      c.fillStyle = "#9aa4b0"; c.fillRect(40, -104, 40, 6);
+      break;
+    }
+    case "rug": {
+      c.fillStyle = color; c.beginPath(); c.ellipse(0, -5, 130, 14, 0, 0, TAU); c.fill();
+      c.fillStyle = d1; c.beginPath(); c.ellipse(0, -5, 96, 9, 0, 0, TAU); c.fill();
+      break;
+    }
+    case "picture": {
+      rr(c, -34, -48, 68, 48, 3); fl(c, "#7a5c3e"); rr(c, -28, -42, 56, 36, 2); fl(c, "#f3d9a8");
+      circle(c, 12, -30, 6, "#ffb703");
+      c.fillStyle = "#6a9a5a"; c.beginPath(); c.moveTo(-28, -6); c.lineTo(-6, -30); c.lineTo(14, -6); c.closePath(); c.fill();
+      break;
+    }
+    case "clock": {
+      circle(c, 0, -26, 26, "#7a5c3e"); circle(c, 0, -26, 22, "#f4f1ea");
+      c.strokeStyle = "#222"; c.lineWidth = 3;
+      c.beginPath(); c.moveTo(0, -26); c.lineTo(0, -42); c.moveTo(0, -26); c.lineTo(12, -22); c.stroke();
+      break;
+    }
+    case "window": {
+      rr(c, -50, -96, 100, 96, 3); fl(c, "#ffffff");
+      rr(c, -43, -89, 40, 82, 2); fl(c, "#bfe3ff"); rr(c, 3, -89, 40, 82, 2); fl(c, "#bfe3ff");
+      break;
+    }
+    case "curtains": {
+      const o = fx.open ?? 0, w = 70 - 48 * o;
+      c.fillStyle = "#3a3f4b"; c.fillRect(-80, -178, 160, 4);
+      rr(c, -78, -174, w, 172, 5); fl(c, color); rr(c, 78 - w, -174, w, 172, 5); fl(c, d1);
+      break;
+    }
+    case "fan": {
+      c.fillStyle = "#3a3f4b"; c.fillRect(-3, -60, 6, 40); circle(c, 0, -18, 14, "#3a3f4b");
+      const a = (fx.t ?? 0) * 6 * (fx.power ?? 1);
+      c.fillStyle = color;
+      for (let k = 0; k < 3; k++) { const w = Math.abs(Math.cos(a + k * 2.1)) * 70 + 8; c.beginPath(); c.ellipse(0, -14, w, 5, 0, 0, TAU); c.fill(); }
+      break;
+    }
+    case "locker": {
+      rr(c, -26, -190, 52, 190, 3); fl(c, "#5b7a9a");
+      c.fillStyle = "#3f5a75"; for (const k of [-170, -160, -150]) c.fillRect(-18, k, 36, 4);
+      circle(c, 14, -100, 3, "#e9eef5");
+      break;
+    }
+    case "bin": {
+      c.beginPath(); c.moveTo(-18, -50); c.lineTo(18, -50); c.lineTo(14, 0); c.lineTo(-14, 0); c.closePath(); fl(c, color);
+      rr(c, -20, -56, 40, 8, 3); fl(c, d1);
+      break;
+    }
+    case "bush": {
+      circle(c, -28, -26, 28, d1); circle(c, 26, -24, 26, d1); circle(c, 0, -36, 34, color);
+      break;
+    }
+    case "fence": {
+      for (let k = -5; k <= 5; k++) { rr(c, k * 22 - 7, -72, 14, 72, 2); fl(c, color); }
+      c.fillStyle = d2; c.fillRect(-125, -55, 250, 8); c.fillRect(-125, -25, 250, 8);
+      break;
+    }
+    case "crowd": {
+      const cols = ["#e63946", "#f4a261", "#2a9d8f", "#457b9d", "#e9c46a", "#8338ec", "#ff7aa2", "#f1faee"];
+      const sk = ["#f2c9a0", "#8a5a3a", "#d9a066", "#6f4a2f"];
+      for (let r = 2; r >= 0; r--) for (let k = 0; k < 7; k++) {
+        const i = r * 7 + k, px = (k - 3) * 36 + (r % 2) * 14, py = -r * 22;
+        const b = Math.abs(Math.sin((fx.t ?? 0) * 2.4 + i * 1.7)) * 4;
+        rr(c, px - 11, py - 52 - b, 22, 34, 8); fl(c, cols[i % 8]);
+        circle(c, px, py - 62 - b, 10, sk[(i * 3) % 4]);
+      }
+      break;
+    }
+    case "ivstand": {
+      c.fillStyle = "#9aa4b0"; c.fillRect(-2, -170, 4, 170); c.fillRect(-24, -4, 48, 4); c.fillRect(-14, -176, 28, 4);
+      rr(c, -8, -150, 16, 28, 5); fl(c, "#cfe9ff");
       break;
     }
     case "box": {
