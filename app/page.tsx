@@ -13,7 +13,7 @@ import { useEditor } from "@/components/useEditor";
 import { TEMPLATES } from "@/lib/templates";
 import { loadAuto, saveAuto } from "@/lib/projects";
 import type { SceneFile } from "@/lib/projects";
-import { DEFAULT_Y, PROP_LIST } from "@/lib/props";
+import { DEFAULT_Y, FOOTPRINT, PROP_LIST, SOLID } from "@/lib/props";
 import type { Renderer3D, Sel } from "@/lib/render3d";
 import { CastMember, CharacterDef, Pose, PoseBlock, PropKind, PropMember, Scene, ThemeId } from "@/lib/types";
 import { Line, VoiceError, audio, listVoices, playNow, prepareLines, resolveVoice, scheduleVoices, voiceKey } from "@/lib/voice";
@@ -381,7 +381,25 @@ const exportVideo = async () => {
     return { X, Z, rot };
   };
   const dragSel = (s: Sel, X: number, Z: number) => {
-    if (s.kind === "actor") { const q = snapXZ(null, X, Z); patch(s.index, { x: toPx(q.X), depth: -q.Z / 8 }); return; }
+      if (s.kind === "actor") {
+      const q = snapXZ(null, X, Z);
+      let ax = q.X, az = q.Z;
+      // a character cannot stand inside furniture: push it out to the nearest edge
+      props.forEach(p => {
+        const f = FOOTPRINT[p.kind];
+        if (!f || !SOLID.has(p.kind)) return;
+        const sw = Math.abs(Math.sin(((p.rot ?? 0) * Math.PI) / 180)) > 0.7;
+        const hw = (sw ? f[1] : f[0]) * p.scale + 0.3, hd = (sw ? f[0] : f[1]) * p.scale + 0.3;
+        const cx = (p.x - 640) / 150, cz = -p.depth * 8;
+        const ox = ax - cx, oz = az - cz;
+        if (Math.abs(ox) < hw && Math.abs(oz) < hd) {
+          const dx = hw - Math.abs(ox), dz = hd - Math.abs(oz);
+          if (dx < dz) ax = cx + Math.sign(ox || 1) * hw; else az = cz + Math.sign(oz || 1) * hd;
+        }
+      });
+      patch(s.index, { x: toPx(ax), depth: -az / 8 });
+      return;
+        }
     const p = props[s.index];
     if (!p) return;
     const q = snapXZ(p.kind, X, Z);
@@ -574,6 +592,11 @@ const exportVideo = async () => {
                   </button>
                 </div>
                 {err && <p className="mt-2 text-sm text-red-400">{err}</p>}
+                {scene.warnings.length > 0 && (
+                  <div className="mt-2 space-y-1 rounded-xl border border-amber-400/30 bg-amber-500/10 p-2 text-xs text-amber-200">
+                    {scene.warnings.map((w, i) => <p key={i}>⚠ {w}</p>)}
+                  </div>
+                )}
               </div>
               <div className={`${panel} text-sm leading-relaxed text-slate-400`}>
                 <p className={lbl}>How to direct</p>
