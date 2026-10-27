@@ -125,6 +125,7 @@ export function actorState(s: Scene, a: Actor, t: number) {
   // sitting
   const sit = moving ? 0 : sitAt(a, t);
   const lie = moving ? 0 : lieAt(a, t);
+  const seatRot = a.actions.filter(q => q.t0 <= t && q.posture === "sit").pop()?.rot ?? 0;
   if (lie > 0) pose.lie = lie;
   if (sit > 0) {
     pose.sit = sit;
@@ -181,7 +182,7 @@ export function actorState(s: Scene, a: Actor, t: number) {
     if (q.enter && q.fromDepth !== undefined && q.fromDepth < 0 && t >= q.t0) alpha = Math.min(alpha, sm(cl((t - q.t0) / 0.5, 0, 1)));
     if (q.exit && (q.toDepth ?? 0) < 0 && t >= q.t0 && t < q.t1) alpha = Math.min(alpha, 1 - sm(cl((t - (q.t1 - 0.5)) / 0.5, 0, 1)));
   }
-  return { x: pos.x, depth: pos.depth, face, view, clip, expr, say, pose, lookEx, moving, holding, alpha };
+  return { x: pos.x, depth: pos.depth, face, view, clip, expr, say, pose, lookEx, moving, holding, alpha, seatRot };
 }
 
 // where a prop is right now (it follows whoever is carrying it)
@@ -200,7 +201,8 @@ export function propPlace(s: Scene, p: SceneProp, t: number) {
   const pw = powerAt(p, t, DEFAULT_POWER[p.kind] ?? false);
   const opens = p.kind === "door" || p.kind === "window" || p.kind === "curtains";
   return {
-    x: pp.x, depth: pp.depth, lift: pp.lift + (p.y ?? 0) * 150, face: pp.face, moving: pp.moving, held: false, by: -1,
+    x: pp.x, depth: pp.depth, lift: p.actions.some(q => q.lift !== undefined && q.t0 <= t) ? pp.lift : (p.y ?? 0) * 150,
+    face: pp.face, moving: pp.moving, held: false, by: -1,
     open: Math.max(openAt(p, t), opens ? pw : 0), power: pw,
   };
 }
@@ -422,7 +424,12 @@ export function renderFrame(c: CanvasRenderingContext2D, s: Scene, t: number, op
         drawProp(c, p.kind, p.color, pl.x, FOOT - pl.depth * 70 - pl.lift * pers, sc, mirror, pl.x / 28, { open: pl.open, riders, power: pl.power, t }) });
     });
     for (const a of s.actors) {
-      if (!visibleAt(a, t)) continue;
+        if (!visibleAt(a, t)) {
+        // someone talking from inside a car still gets a speech bubble above the car
+        const st0 = actorState(s, a, t);
+        if (st0.say && a.actions.some(q => q.ride !== undefined && t >= q.t0 && t < q.t1)) talkers.push({ x: st0.x, y: FOOT - st0.depth * 70 - 200, say: st0.say });
+        continue;
+            }
       const st = actorState(s, a, t);
       const fy = FOOT - st.depth * 70, sc = 1 - st.depth * 0.22;
       items.push({ depth: st.depth, order: 1, draw: () => withAlpha(c, st.alpha, () => drawActor(c, a.def, st.pose, st.expr, st.x, fy, sc,
