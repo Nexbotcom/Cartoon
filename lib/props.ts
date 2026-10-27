@@ -47,6 +47,24 @@ export const DEFAULT_Y: Partial<Record<PropKind, number>> = { picture: 1.5, cloc
 
 export interface PropFx { open?: number; riders?: { skin: string; hair: string }[]; power?: number; t?: number }
 
+// half width and half depth (metres) of the floor space each prop takes up
+export const FOOTPRINT: Partial<Record<PropKind, [number, number]>> = {
+  sofa: [0.95, 0.43], chair: [0.28, 0.28], table: [0.7, 0.4], desk: [0.85, 0.4], bookshelf: [0.55, 0.18], lamp: [0.2, 0.2],
+  plant: [0.2, 0.2], tv: [0.75, 0.25], bed: [1.05, 0.75], tree: [0.3, 0.3], bench: [0.75, 0.25], streetlight: [0.12, 0.12],
+  car: [1.1, 0.55], goal: [1.2, 0.2], board: [1.1, 0.1], wardrobe: [0.6, 0.3], fridge: [0.4, 0.35], counter: [1.1, 0.35],
+  locker: [0.23, 0.2], bin: [0.2, 0.2], bush: [0.55, 0.4], fence: [1.9, 0.1], crowd: [1.8, 1.0], ivstand: [0.25, 0.25],
+};
+// things a character cannot walk through
+export const SOLID: ReadonlySet<PropKind> = new Set<PropKind>([
+  "sofa", "chair", "table", "desk", "bookshelf", "lamp", "plant", "tv", "bed", "tree", "bench", "streetlight", "car",
+  "goal", "board", "wardrobe", "fridge", "counter", "locker", "bin", "bush", "fence", "crowd", "ivstand",
+]);
+// things a character walks up to and stands IN FRONT of (instead of beside)
+export const FRONT_KINDS: ReadonlySet<PropKind> = new Set<PropKind>([
+  "goal", "board", "tv", "bookshelf", "wardrobe", "fridge", "counter", "locker", "door", "fence",
+]);
+
+
 const TAU = Math.PI * 2;
 const dk = (h: string, f: number) => {
   if (h[0] !== "#" || h.length < 7) return h;
