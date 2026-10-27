@@ -1,4 +1,4 @@
-import { Action, Actor, ClipId, Pose, Scene, SceneProp, ThemeId, View } from "./types";
+import { Action, Actor, ClipId, Pose, PropKind, Scene, SceneProp, ThemeId, View } from "./types";
 import { BASE, clips, drawActor } from "./draw";
 import { drawProp } from "./props";
 
@@ -68,6 +68,27 @@ export function sitAt(a: { actions: Action[] }, t: number) {
   const u = sm(cl((t - last.t0) / 0.5, 0, 1));
   return last.posture === "sit" ? u : 1 - u;
 }
+// props that can be switched on/off or opened/closed by the script; the value is the starting state
+export const DEFAULT_POWER: Partial<Record<PropKind, boolean>> = { tv: true, lamp: true, fan: true, curtains: true };
+export function powerAt(p: { actions: Action[] }, t: number, def: boolean) {
+  let cur = def ? 1 : 0;
+  for (const q of p.actions) {
+    if (q.power === undefined || q.t0 > t) continue;
+    cur = lerp(cur, q.power ? 1 : 0, sm(cl((t - q.t0) / 0.5, 0, 1)));
+  }
+  return cur;
+}
+export function lieAt(a: { actions: Action[] }, t: number) {
+  let last: Action | undefined, any = false;
+  for (const q of a.actions) {
+    if (q.t0 > t) continue;
+    if (q.posture === "lie") any = true;
+    if (q.posture !== undefined) last = q;
+  }
+  if (!last || !any) return 0;
+  const u = sm(cl((t - last.t0) / 0.7, 0, 1));
+  return last.posture === "lie" ? u : 1 - u;
+}
 
 function lookVec(s: Scene, look: string, from: number, t: number) {
   const z = { yaw: 0, pitch: 0, ex: 0, ey: 0 };
@@ -103,6 +124,8 @@ export function actorState(s: Scene, a: Actor, t: number) {
 
   // sitting
   const sit = moving ? 0 : sitAt(a, t);
+  const lie = moving ? 0 : lieAt(a, t);
+  if (lie > 0) pose.lie = lie;
   if (sit > 0) {
     pose.sit = sit;
     for (const k of ["lLU", "lRU", "lLB", "lRB"] as const) pose[k] = lerp(pose[k], 90, sit);
@@ -152,7 +175,13 @@ export function actorState(s: Scene, a: Actor, t: number) {
   }
 
   const view: View = clip === "type" ? "front" : sideNow ? "side" : viewA ?? "front";
-  return { x: pos.x, depth: pos.depth, face, view, clip, expr, say, pose, lookEx, moving, holding };
+    // people who come in from, or leave toward, the camera fade in and out
+  let alpha = 1;
+  for (const q of a.actions) {
+    if (q.enter && q.fromDepth !== undefined && q.fromDepth < 0 && t >= q.t0) alpha = Math.min(alpha, sm(cl((t - q.t0) / 0.5, 0, 1)));
+    if (q.exit && (q.toDepth ?? 0) < 0 && t >= q.t0 && t < q.t1) alpha = Math.min(alpha, 1 - sm(cl((t - (q.t1 - 0.5)) / 0.5, 0, 1)));
+  }
+  return { x: pos.x, depth: pos.depth, face, view, clip, expr, say, pose, lookEx, moving, holding, alpha };
 }
 
 // where a prop is right now (it follows whoever is carrying it)
@@ -164,11 +193,16 @@ export function propPlace(s: Scene, p: SceneProp, t: number) {
     const sit = pa.moving ? 0 : sitAt(a, t);
     return {
       x: pa.x + (pa.moving ? pa.face * a.def.height * 0.2 : 0), depth: pa.depth - 0.002,
-      lift: a.def.height * (0.4 - sit * 0.23), face: pa.face, moving: false, held: true, by: h.by, open: 0,
+      lift: a.def.height * (0.4 - sit * 0.23), face: pa.face, moving: false, held: true, by: h.by, open: 0, power: 1,
     };
   }
   const pp = posAt(p, t, s.props);
-  return { x: pp.x, depth: pp.depth, lift: pp.lift, face: pp.face, moving: pp.moving, held: false, by: -1, open: openAt(p, t) };
+  const pw = powerAt(p, t, DEFAULT_POWER[p.kind] ?? false);
+  const opens = p.kind === "door" || p.kind === "window" || p.kind === "curtains";
+  return {
+    x: pp.x, depth: pp.depth, lift: pp.lift + (p.y ?? 0) * 150, face: pp.face, moving: pp.moving, held: false, by: -1,
+    open: Math.max(openAt(p, t), opens ? pw : 0), power: pw,
+  };
 }
 
 const entity = (s: Scene, i: number | undefined): Mover | undefined =>
@@ -275,6 +309,20 @@ const fgL = (color: string): Layer => ({ speed: 1.6, tile: 500, draw: (c, i) => 
   c.fillStyle = color; c.beginPath();
   c.ellipse(i * 500 + rnd(i, 4) * 300, GROUND + 190, 90, 60, 0, 0, 7); c.fill(); } });
 
+const classL: Layer = { speed: 0.6, tile: 520, draw: (c, i) => {
+  const x = i * 520;
+  c.fillStyle = "#2f4f45"; c.fillRect(x + 90, GROUND - 330, 340, 190);
+  c.fillStyle = "#8a6a4a"; c.fillRect(x + 84, GROUND - 336, 352, 8); c.fillRect(x + 84, GROUND - 142, 352, 8);
+  c.fillStyle = "rgba(255,255,255,0.85)"; c.font = "700 26px system-ui, sans-serif"; c.textAlign = "center";
+  c.fillText("ABC  123", x + 260, GROUND - 240);
+  c.fillStyle = "#cfc2ae"; c.fillRect(x, GROUND - 14, 521, 14); } };
+const wardL: Layer = { speed: 0.6, tile: 460, draw: (c, i) => {
+  const x = i * 460;
+  c.fillStyle = "#ffffff"; c.fillRect(x + 120, GROUND - 330, 210, 230);
+  c.fillStyle = "#bfe3ff"; c.fillRect(x + 130, GROUND - 320, 90, 210); c.fillRect(x + 230, GROUND - 320, 90, 210);
+  c.fillStyle = "#d62839"; c.fillRect(x + 390, GROUND - 300, 14, 44); c.fillRect(x + 375, GROUND - 285, 44, 14);
+  c.fillStyle = "#c9d6df"; c.fillRect(x, GROUND - 14, 461, 14); } };
+
 interface ThemeDef { sky: string[]; far: Layer | null; mid: Layer; ground: Layer; fg: Layer | null; sun?: { x: number; y: number; r: number; c: string }; stars?: boolean }
 
 const THEMES: Record<ThemeId, ThemeDef> = {
@@ -286,6 +334,10 @@ const THEMES: Record<ThemeId, ThemeDef> = {
   pitch:    { sky: ["#7ec8ff", "#eaf6ff"], far: standsL, mid: boardsL, ground: pitchGround, fg: null, sun: { x: 1100, y: 100, r: 40, c: "#fff3b0" } },
   school:   { sky: ["#8fd0ff", "#eef8ff"], far: hillsL("#c9ddd0"), mid: schoolL, ground: groundL("#8e949c", "#7b818a"), fg: fgL("#4d8a4f"), sun: { x: 1120, y: 100, r: 42, c: "#fff3b0" } },
   hospital: { sky: ["#a9d8ff", "#f4fbff"], far: hillsL("#d3e4d8"), mid: hospitalL, ground: groundL("#c9ced6", "#b4bac4"), fg: fgL("#5aa85d"), sun: { x: 1100, y: 100, r: 40, c: "#fff3b0" } },
+  bedroom:   { sky: ["#d9e3f0", "#c7d3e6"], far: null, mid: roomL, ground: groundL("#c9a37a", "#b48f66", true), fg: null },
+  house:     { sky: ["#f1e6d3", "#e6d6bd"], far: null, mid: roomL, ground: groundL("#b98c5e", "#a67a50", true), fg: null },
+  classroom: { sky: ["#f1ecd9", "#e3dcc2"], far: null, mid: classL, ground: groundL("#c9b99a", "#b8a886", true), fg: null },
+  ward:      { sky: ["#eaf3f8", "#d9e8f0"], far: null, mid: wardL, ground: groundL("#d7dde3", "#c4ccd4"), fg: null },
 };
 
 export const THEME_LIST: { id: ThemeId; label: string; swatch: string }[] = [
@@ -297,6 +349,10 @@ export const THEME_LIST: { id: ThemeId; label: string; swatch: string }[] = [
   { id: "pitch", label: "Pitch", swatch: "linear-gradient(#7ec8ff,#3f9a4a)" },
   { id: "school", label: "School", swatch: "linear-gradient(#8fd0ff,#d9a15f)" },
   { id: "hospital", label: "Hospital", swatch: "linear-gradient(#a9d8ff,#eef3f8)" },
+  { id: "bedroom", label: "Bedroom", swatch: "linear-gradient(#d9e3f0,#c9a37a)" },
+  { id: "house", label: "Big house", swatch: "linear-gradient(#f1e6d3,#b98c5e)" },
+  { id: "classroom", label: "Classroom", swatch: "linear-gradient(#f1ecd9,#2f4f45)" },
+  { id: "ward", label: "Ward", swatch: "linear-gradient(#eaf3f8,#d7dde3)" },
 ];
 
 function layer(c: CanvasRenderingContext2D, L: Layer, cam: { x: number; y: number; zoom: number }, body?: () => void) {
@@ -328,6 +384,10 @@ export function drawBubble(c: CanvasRenderingContext2D, text: string, x: number,
   lines.forEach((l, k) => c.fillText(l, x, by + 11 + lh * (k + 0.5)));
   c.restore();
 }
+const withAlpha = (c: CanvasRenderingContext2D, a: number, f: () => void) => {
+  if (a >= 0.999) { f(); return; }
+  c.save(); c.globalAlpha = a; f(); c.restore();
+};
 
 export function renderFrame(c: CanvasRenderingContext2D, s: Scene, t: number, opts: { bubbles?: boolean; theme?: ThemeId } = {}) {
   const cam = camAt(s, t);
@@ -359,14 +419,15 @@ export function renderFrame(c: CanvasRenderingContext2D, s: Scene, t: number, op
         .filter(a => a.actions.some(q => q.ride === pi && t >= q.t0 && t < q.t1))
         .map(a => ({ skin: a.def.skin, hair: a.def.hair }));
       items.push({ depth: pl.depth, order: 0, draw: () =>
-        drawProp(c, p.kind, p.color, pl.x, FOOT - pl.depth * 70 - pl.lift * pers, sc, mirror, pl.x / 28, { open: pl.open, riders }) });
+        drawProp(c, p.kind, p.color, pl.x, FOOT - pl.depth * 70 - pl.lift * pers, sc, mirror, pl.x / 28, { open: pl.open, riders, power: pl.power, t }) });
     });
     for (const a of s.actors) {
       if (!visibleAt(a, t)) continue;
       const st = actorState(s, a, t);
       const fy = FOOT - st.depth * 70, sc = 1 - st.depth * 0.22;
-      items.push({ depth: st.depth, order: 1, draw: () => drawActor(c, a.def, st.pose, st.expr, st.x, fy, sc,
-        { view: st.view, face: st.face, seed: Math.floor(t * 8), prop: st.clip === "type" ? "laptop" : undefined }) });
+      items.push({ depth: st.depth, order: 1, draw: () => withAlpha(c, st.alpha, () => drawActor(c, a.def, st.pose, st.expr, st.x, fy, sc,
+        { view: st.view, face: st.face, seed: Math.floor(t * 8), prop: st.clip === "type" ? "laptop" : undefined })) });
+      
       if (st.say) talkers.push({ x: st.x, y: fy - a.def.height * sc * 1.02 - 10, say: st.say });
     }
     items.sort((a, b) => b.depth - a.depth || a.order - b.order);
