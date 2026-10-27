@@ -284,8 +284,11 @@ export function createRenderer3D(): Renderer3D {
       rig.angle += dA * (1 - Math.exp(-dt * 12));
     }
     rig.root.rotation.y = lerp(rig.angle, Math.PI / 2, lie);
-    rig.body.position.y = -p.bob * 0.0058 - p.sit * 0.4 + lie * 0.78;
-    rig.body.rotation.x = -lie * Math.PI / 2;
+    
+    rig.body.position.y = -p.bob * 0.0058 - p.sit * 0.27 + lie * 0.78;
+    const seatA = (st.seatRot ?? 0) * D;
+    const faceA = rig.angle + Math.atan2(Math.sin(seatA - rig.angle), Math.cos(seatA - rig.angle)) * p.sit;
+    rig.root.rotation.y = lerp(faceA, Math.PI / 2, lie);
     rig.torso.rotation.x = p.lean * D;
 
     const setArm = (sh: THREE.Group, el: THREE.Group, aU: number, aB: number, sgn: number) => {
@@ -304,7 +307,7 @@ export function createRenderer3D(): Renderer3D {
 
     const setLeg = (lg: THREE.Group, kn: THREE.Group, aU: number, aB: number, sgn: number) => {
       lg.rotation.set(0, 0, 0); kn.rotation.set(0, 0, 0);
-      if (p.sit > 0.02 && !st.moving) { lg.rotation.x = -p.sit * Math.PI / 2; kn.rotation.x = p.sit * Math.PI / 2; return; }
+      if (p.sit > 0.02 && !st.moving) { lg.rotation.x = -p.sit * 1.25; kn.rotation.x = p.sit * 1.25; return; }
       if (clip === "jump") { lg.rotation.x = -0.5; kn.rotation.x = 1.0; return; }
       if (side) { lg.rotation.x = -aU * D; kn.rotation.x = aB * D; }
       else { lg.rotation.z = sgn * aU * D * 0.5; kn.rotation.x = Math.max(0, aB) * D; }
@@ -420,7 +423,11 @@ export function createRenderer3D(): Renderer3D {
       if (!rig) return;
       const vis = visibleAt(a, t);
       rig.root.visible = vis;
-      if (!vis) return;
+      if (!vis) {
+        const sr = actorState(s, a, t);
+        if (sr.say && a.actions.some(q => q.ride !== undefined && t >= q.t0 && t < q.t1)) talkers.push({ x: toX(sr.x), y: 2.1, z: toZ(sr.depth), say: sr.say });
+        return;
+      }
       const st = actorState(s, a, t);
       poseRig(rig, st, jump, dt);
       sits[i] = st.pose.sit;
@@ -439,7 +446,7 @@ export function createRenderer3D(): Renderer3D {
       if (pl.held && holder) {
         po.g.position.set(
           holder.root.position.x + Math.sin(holder.angle) * 0.32 * holder.s,
-          (0.85 - (sits[pl.by] ?? 0) * 0.4) * holder.s,
+          (0.85 - (sits[pl.by] ?? 0) * 0.27) * holder.s,
           holder.root.position.z + Math.cos(holder.angle) * 0.32 * holder.s);
         po.g.rotation.y = holder.angle;
       } else {
