@@ -221,7 +221,7 @@ export function parseScript(
         if (tgt !== undefined && /\b(to|toward|towards|near|beside|next to|approach\w*|over)\b/.test(l)) { tx = px[tgt] + (dx < px[tgt] ? -150 : 150); td = pdepth[tgt]; }
         else if (/cent(er|re)|middle/.test(l)) tx = W / 2;
         else tx = me.x;
-        tx = cl(tx, 60, W - 60);
+        tx = cl(tx, -700, W + 700);
         const dur = cl(Math.abs(tx - dx) / (run ? 300 : 130), 0.8, 8);
         if (me.actions.length === 0) me.startHidden = true;
         props[doorHit].actions.push({ t0: t, t1: t + 0.35 + 1.4, open: true });
@@ -334,7 +334,7 @@ export function parseScript(
         else if (/\bleft\b|\bback(ward)?s?\b/.test(l)) tx = cur - 300;
         else if (/\bright\b|forward/.test(l)) tx = cur + 300;
         else tx = tgt !== undefined ? px[tgt] + (cur < px[tgt] ? -150 : 150) : cur + 300;
-        tx = cl(tx, 60, W - 60);
+        tx = cl(tx, -700, W + 700);
         if (enter) fromX = edge(eSide ? eSide === "left" : dirLeft ? true : dirRight ? false : tx < W / 2);
       }
       const frontIn = enter && /\bfrom (the )?(front|camera|audience|viewer)\b/.test(l);
@@ -344,7 +344,7 @@ export function parseScript(
       if (frontOut) { tx = cur; wd = -1.4; }
       if (enter && me.actions.length === 0) me.startHidden = true;
       const speed = run ? 300 : 130;
-      const walkDur = frontIn || frontOut ? 2.2 : cl(Math.abs(tx - (fromX ?? cur)) / speed, 0.6, 8);
+      const walkDur = frontIn || frontOut ? 2.2 : cl(Math.abs(tx - (fromX ?? cur)) / speed, 0.6, 20);
       const gait: ClipId = run ? "run" : "walk";
       px[who] = tx; pdepth[who] = wd;
       const mv = { moveTo: tx, fromX, fromDepth: fromD, toDepth: wd, enter: enter || undefined, exit: exit || undefined };
