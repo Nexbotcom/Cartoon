@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { FILM } from "@/lib/film";
+import { SERIES } from "@/lib/series";
 import { parseScript } from "@/lib/parser";
 import { SceneFile, deleteScene, exportScenes, importScenes, listScenes, saveScene } from "@/lib/projects";
 
@@ -16,7 +17,9 @@ export default function FilmPanel({ current, onLoad }: { current: () => SceneFil
   const [msg, setMsg] = useState("");
   useEffect(() => { listScenes().then(setMine); }, []);
 
+  
   const filmLens = useMemo(() => FILM.map(length), []);
+  const seriesLens = useMemo(() => SERIES.map(length), []);
   const total = filmLens.reduce((a, b) => a + b, 0);
   const mineLens = useMemo(() => mine.map(length), [mine]);
 
