@@ -10,7 +10,7 @@ const dk = (h: string, f: number) => {
 
 export const BASE: Pose = {
   aLU: 6, aLB: 8, aRU: 6, aRB: 8, lLU: 3, lLB: 0, lRU: 3, lRB: 0,
-  yaw: 0, pitch: 0, tilt: 0, lean: 0, bob: 0, mouth: 0, blink: 0, eyeX: 0, eyeY: 0, sit: 0,
+  yaw: 0, pitch: 0, tilt: 0, lean: 0, bob: 0, mouth: 0, blink: 0, eyeX: 0, eyeY: 0, sit: 0, lie: 0,
 };
 
 // Angles: 0 = hanging down, positive = outward (front view) or forward (side view).
@@ -83,6 +83,12 @@ export function drawActor(
   c.fillStyle = "rgba(0,0,0,0.16)";
   c.beginPath(); c.ellipse(0, 0, H * 0.2, H * 0.03, 0, 0, TAU); c.fill();
   c.translate(0, p.bob + p.sit * Lg * 0.5);
+  if (p.lie > 0) {
+    c.translate(0, p.lie * H * 0.08);
+    c.translate(0, hipY); c.rotate((-Math.PI / 2) * p.lie); c.translate(0, -hipY);
+  }
+
+  
   c.lineCap = "round"; c.lineJoin = "round";
 
   // ---------- drawing helpers ----------
