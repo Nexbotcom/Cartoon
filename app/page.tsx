@@ -8,9 +8,13 @@ import { H, THEME_LIST, W, renderFrame } from "@/lib/engine";
 import { listChars } from "@/lib/library";
 import { parseScript } from "@/lib/parser";
 import { PRESETS } from "@/lib/presets";
+import EnvPanel from "@/components/EnvPanel";
+import { useEditor } from "@/components/useEditor";
+import { TEMPLATES } from "@/lib/templates";
+import { loadAuto, saveAuto } from "@/lib/projects";
 import type { SceneFile } from "@/lib/projects";
-import { PROP_LIST } from "@/lib/props";
-import type { Renderer3D } from "@/lib/render3d";
+import { DEFAULT_Y, PROP_LIST } from "@/lib/props";
+import type { Renderer3D, Sel } from "@/lib/render3d";
 import { CastMember, CharacterDef, Pose, PoseBlock, PropKind, PropMember, Scene, ThemeId } from "@/lib/types";
 import { Line, VoiceError, audio, listVoices, playNow, prepareLines, resolveVoice, scheduleVoices, voiceKey } from "@/lib/voice";
 
@@ -20,7 +24,9 @@ Sam: say "You made it!" then run out of the scene to the left
 Car: enter from the right and drive out of the scene to the left
 Camera: follow Sam`;
 
-type Tab = "script" | "stage" | "look" | "pose" | "timeline" | "film";
+type Tab = "script" | "stage" | "look" | "pose" | "timeline" | "film" | "env";
+const WALL_PROPS: PropKind[] = ["picture", "clock", "window", "curtains"];
+
 interface VoiceStatus { kind: "idle" | "working" | "waiting" | "error" | "quota"; msg: string; done: number; total: number }
 const IDLE: VoiceStatus = { kind: "idle", msg: "", done: 0, total: 0 };
 
@@ -72,6 +78,14 @@ export default function Studio() {
   const [muteVoices, setMuteVoices] = useState(false);
   const [durations, setDurations] = useState<Record<string, number>>({});
   const [vs, setVs] = useState<VoiceStatus>(IDLE);
+  const [alive, setAlive] = useState(true);
+  const [hidden, setHidden] = useState<string[]>([]);
+  const [editor, setEditor] = useState(false);
+  const [selection, setSelection] = useState<Sel | null>(null);
+  const [grid, setGrid] = useState(true);
+  const [wallSnap, setWallSnap] = useState(true);
+  const [envInfo, setEnvInfo] = useState<{ parts: string[]; height: number }>({ parts: [], height: 5 });
+  const autoReady = useRef(false);
 
   const setT = (t: number) => { timeRef.current = t; setTime(t); };
 
@@ -100,7 +114,7 @@ export default function Studio() {
   };
 
   const paint = (c: CanvasRenderingContext2D, sc: Scene, t: number) => {
-    if (mode === "3d" && r3.current) r3.current.render(c, sc, t, { theme, bubbles });
+    if (mode === "3d" && r3.current) r3.current.render(c, sc, t, { theme, bubbles, alive, hidden, editor: editor && !playingRef.current, selection });
     else renderFrame(c, sc, t, { bubbles, theme });
   };
 
@@ -133,6 +147,43 @@ export default function Studio() {
   useEffect(() => { listChars().then(setLib); }, [tab]);
   useEffect(() => { setDraft({}); setDraftT0(null); }, [sel]);
   useEffect(() => { listVoices().then(r => { setVoices(r.voices); setVoiceNote(r.error ?? ""); }); }, []);
+
+  // restore the last layout, and save every change
+  useEffect(() => {
+    loadAuto()
+      .then(a => { if (a) { setTheme(a.theme); setProps(a.props); setHidden(a.hidden ?? []); } })
+      .finally(() => { autoReady.current = true; });
+  }, []);
+  useEffect(() => {
+    if (!autoReady.current) return;
+    const id = setTimeout(() => { void saveAuto({ theme, props, hidden }); }, 600);
+    return () => clearTimeout(id);
+  }, [theme, props, hidden]);
+
+  // the editor is 3D only
+  useEffect(() => { if (mode === "2d") { setEditor(false); setSelection(null); } }, [mode]);
+
+  // in the editor the picture keeps moving (fans, trees...) and follows the editor camera
+  useEffect(() => {
+    if (!(editor && mode === "3d" && r3ready)) return;
+    let id = 0;
+    const tick = () => {
+      if (!playingRef.current) paint(ctx(), scene, performance.now() / 1000);
+      id = requestAnimationFrame(tick);
+    };
+    id = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(id);
+  }, [editor, mode, r3ready, scene, theme, alive, hidden, selection, bubbles]);
+
+  // what this place is made of (for the show/hide switches)
+  useEffect(() => {
+    if (mode !== "3d" || !r3.current) return;
+    const i = r3.current.info();
+    setEnvInfo(prev => (prev.parts.join() === i.parts.join() && prev.height === i.height ? prev : { parts: i.parts, height: i.height }));
+  }, [theme, mode, r3ready, scene]);
+
+
+  
 
   // ---------- voices ----------
   const mkDurOf = (durs: Record<string, number>, cs: CastMember[]) => (who: number, text: string): number | undefined => {
@@ -219,14 +270,17 @@ export default function Studio() {
     raf.current = requestAnimationFrame(tick);
   };
 
-  const startPlay = async () => {
-    const sc = await prepare();
+ const startPlay = async () => {
+  setEditor(false); setSelection(null);
+  const sc = await prepare();
     if (sc) runPlayback(sc);
   };
   const scrub = (t: number) => { stop(); setT(t); paint(ctx(), scene, t); };
 
-  const exportVideo = async () => {
-    const sc = await prepare();
+const exportVideo = async () => {
+  setEditor(false); setSelection(null);
+  const sc = await prepare();
+    
     if (!sc) return;
     const withAudio = ["video/mp4;codecs=avc1.42E01E,mp4a.40.2", "video/mp4;codecs=avc1,mp4a.40.2", "video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"];
     const videoOnly = ["video/mp4;codecs=avc1", "video/webm;codecs=vp9", "video/webm"];
@@ -281,9 +335,10 @@ export default function Studio() {
   const loadScene = (sf: SceneFile) => {
     stop();
     setCast(sf.cast); setProps(sf.props); setTheme(sf.theme); setScript(sf.script);
+    setHidden(sf.hidden ?? []); setSelection(null);
     setSel(0); setT(0);
   };
-  const snapshot = (): SceneFile => ({ name: "", theme, cast, props, script });
+  const snapshot = (): SceneFile => ({ name: "", theme, cast, props, script, hidden });
   const addOrbit = () => {
     const who = cast[sel]?.def.name ?? cast[0]?.def.name ?? "";
     setScript(s => `${s.trimEnd()}\nCamera: orbit around ${who} for 5 seconds`);
@@ -299,6 +354,95 @@ export default function Studio() {
       depth: info.depth, scale: 1, color: info.color, flip: false,
     }]);
   };
+
+    // ---------- 3D environment editor ----------
+  const toPx = (X: number) => Math.round(640 + X * 150);
+  const posOfSel = (s: Sel) => {
+    if (s.kind === "prop") { const p = props[s.index]; return p ? { X: (p.x - 640) / 150, Z: -p.depth * 8, y: p.y ?? 0 } : { X: 0, Z: 0, y: 0 }; }
+    const c = cast[s.index];
+    return c ? { X: (c.x - 640) / 150, Z: -c.depth * 8, y: 0 } : { X: 0, Z: 0, y: 0 };
+  };
+  const snapXZ = (kind: PropKind | null, X0: number, Z0: number) => {
+    let X = X0, Z = Z0, rot: number | undefined;
+    if (grid) { X = Math.round(X / 0.25) * 0.25; Z = Math.round(Z / 0.25) * 0.25; }
+    const b = r3.current?.info().bounds;
+    const wallKind = kind !== null && WALL_PROPS.includes(kind);
+    if (b && (wallSnap || wallKind)) {
+      const margin = wallKind ? 0.05 : 0.45;
+      const dl = X - b.minX, dr = b.maxX - X, db = Z - b.minZ, df = b.maxZ - Z;
+      const nearest = Math.min(dl, dr, db, df);
+      if (wallKind || nearest < 0.6) {
+        if (nearest === db) { Z = b.minZ + margin; rot = 0; }
+        else if (nearest === df) { Z = b.maxZ - margin; rot = 180; }
+        else if (nearest === dl) { X = b.minX + margin; rot = 90; }
+        else { X = b.maxX - margin; rot = -90; }
+      }
+    }
+    return { X, Z, rot };
+  };
+  const dragSel = (s: Sel, X: number, Z: number) => {
+    if (s.kind === "actor") { const q = snapXZ(null, X, Z); patch(s.index, { x: toPx(q.X), depth: -q.Z / 8 }); return; }
+    const p = props[s.index];
+    if (!p) return;
+    const q = snapXZ(p.kind, X, Z);
+    patchProp(s.index, { x: toPx(q.X), depth: -q.Z / 8, ...(q.rot !== undefined ? { rot: q.rot } : {}) });
+  };
+  const ed = useEditor({ enabled: editor && mode === "3d", r3, canvas: cv, setSelection, getPos: posOfSel, onDrag: dragSel });
+
+  const takenNames = () => [...cast.map(c => c.def.name), ...props.map(p => p.name)].map(s => s.toLowerCase());
+  const mkProp = (kind: PropKind, X: number, Z: number, extra: Partial<PropMember>, taken: string[]): PropMember => {
+    const info = PROP_LIST.find(q => q.kind === kind) as (typeof PROP_LIST)[number];
+    let name = info.label, n = 2;
+    while (taken.includes(name.toLowerCase())) name = `${info.label} ${n++}`;
+    taken.push(name.toLowerCase());
+    const dy = DEFAULT_Y[kind];
+    return {
+      id: crypto.randomUUID(), kind, name, x: toPx(X), depth: -Z / 8, scale: 1, color: info.color, flip: false,
+      y: dy === undefined ? 0 : kind === "fan" ? envInfo.height : dy, rot: 0, ...extra,
+    };
+  };
+  const addEnvProp = (kind: PropKind) => {
+    const b = r3.current?.info().bounds;
+    const p = mkProp(kind, b ? (b.minX + b.maxX) / 2 : 0, b ? (b.minZ + b.maxZ) / 2 : -4, {}, takenNames());
+    setSelection({ kind: "prop", index: props.length });
+    setProps(ps => [...ps, p]);
+  };
+  const furnish = () => {
+    const taken = takenNames();
+    const items = TEMPLATES[theme].map(it => mkProp(it.kind, it.X, it.Z, {
+      rot: it.rot ?? 0, ...(it.y !== undefined ? { y: it.y } : {}), ...(it.color ? { color: it.color } : {}), ...(it.scale ? { scale: it.scale } : {}),
+    }, taken));
+    setProps(ps => [...ps, ...items]);
+  };
+  const clearProps = () => { setProps([]); setSelection(null); };
+
+  const selProp = selection && selection.kind === "prop" ? props[selection.index] : undefined;
+  const selInfo = selection
+    ? selProp
+      ? { label: selProp.name, kind: "prop" as const, rot: selProp.rot ?? 0, scale: selProp.scale, y: selProp.y ?? 0 }
+      : selection.kind === "actor" && cast[selection.index]
+        ? { label: cast[selection.index].def.name, kind: "actor" as const, rot: 0, scale: 1, y: 0 }
+        : null
+    : null;
+  const rotSel = (d: number) => { if (selProp && selection) patchProp(selection.index, { rot: ((((selProp.rot ?? 0) + d) % 360) + 360) % 360 }); };
+  const scaleSel = (d: number) => { if (selProp && selection) patchProp(selection.index, { scale: Math.min(3, Math.max(0.3, +(selProp.scale + d).toFixed(2))) }); };
+  const liftSel = (d: number) => { if (selProp && selection) patchProp(selection.index, { y: Math.min(6, Math.max(0, +((selProp.y ?? 0) + d).toFixed(2))) }); };
+  const dupSel = () => {
+    if (!selProp) return;
+    const taken = takenNames();
+    const base = selProp.name.replace(/\s+\d+$/, "");
+    let n = 2;
+    while (taken.includes(`${base} ${n}`.toLowerCase())) n++;
+    setSelection({ kind: "prop", index: props.length });
+    setProps(ps => [...ps, { ...selProp, id: crypto.randomUUID(), name: `${base} ${n}`, x: selProp.x + 60 }]);
+  };
+  const delSel = () => {
+    if (!selection || selection.kind !== "prop") return;
+    const i = selection.index;
+    setProps(ps => ps.filter((_, k) => k !== i));
+    setSelection(null);
+  };
+  const toggleHidden = (name: string) => setHidden(h => (h.includes(name) ? h.filter(x => x !== name) : [...h, name]));
 
   // ---- pose blocks ----
   const blocks: PoseBlock[] = cast[sel]?.keys ?? [];
