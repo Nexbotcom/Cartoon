@@ -44,6 +44,7 @@ export interface Action {
   lift?: number;       // height above the floor in pixels (objects placed on tables)
   ride?: number;       // actor is inside the prop with this index during [t0, t1]
   posture?: "sit" | "stand" | "lie";
+  rot?: number;        // direction (degrees) a seated character faces
   power?: boolean;     // for props: switched on / open (true) or off / closed (false)
   open?: boolean;      // for doors: open during [t0, t1]
 }
@@ -67,4 +68,4 @@ export interface SceneProp extends PropMember { actions: Action[]; holds: Hold[]
 export interface CamKey { t: number; x: number; y: number; zoom: number; follow?: number }
 // A 360 / orbit camera move. Only used by the 3D mode, and only where the script asks for it.
 export interface Shot3D { t0: number; t1: number; deg: number; target?: number }
-export interface Scene { duration: number; actors: Actor[]; props: SceneProp[]; cam: CamKey[]; shots: Shot3D[] }
+export interface Scene { duration: number; actors: Actor[]; props: SceneProp[]; cam: CamKey[]; shots: Shot3D[]; warnings: string[] }
