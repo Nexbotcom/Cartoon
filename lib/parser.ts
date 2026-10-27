@@ -26,6 +26,7 @@ const EXIT_SIDE = /(?:exit\w*|leave\w*|out|off|away)\b[^,.]*?\b(left|right)/;
 const HOLDABLE: string[] = ["box", "cake", "bag", "ball"];
 const SIT = /\b(sit|sits|sitting|seated)\b|\btakes? a seat\b/;
 const STAND = /\b(stands?|standing|gets? up|rises?)\b/;
+const LIE = /\b(lie|lies|lying|lay|lays|sleep|sleeps|sleeping|nap|naps)\b/;
 const PICK = /\b(pick|picks|grab|grabs|take|takes|lift|lifts|carry|carries|bring|brings|hold|holds)\b/;
 const GIVE = /\b(give|gives|hand|hands|pass|passes|offer|offers|deliver|delivers)\b/;
 const PUT = /\b(put|puts|place|places|set|sets|drop|drops|lay|lays)\b/;
@@ -65,6 +66,7 @@ export function parseScript(
   const cam: CamKey[] = [{ t: 0, x: W / 2, y: H / 2, zoom: 1 }];
   const shots: Shot3D[] = [];
   const seatedOn: (number | undefined)[] = actors.map(() => undefined);
+  const lyingOn: boolean[] = actors.map(() => false);
   const occ: Record<number, number> = {};
   const holdingOf: ({ pi: number; hold: Hold } | undefined)[] = actors.map(() => undefined);
   const rideOpen: (Action | undefined)[] = actors.map(() => undefined);
@@ -77,6 +79,12 @@ export function parseScript(
 
   // ---------- small building blocks ----------
   const leaveSeat = (who: number, t: number): number => {
+    
+    if (lyingOn[who]) {
+      lyingOn[who] = false;
+      actors[who].actions.push({ t0: t, t1: t + 0.8, posture: "stand" });
+      return t + 0.8;
+    }
     const pi = seatedOn[who];
     if (pi === undefined) return t;
     actors[who].actions.push({ t0: t, t1: t + 0.7, posture: "stand" });
@@ -225,8 +233,24 @@ export function parseScript(
 
     // ----- sit and stand -----
     if (!moveDone && !rideOpen[who]) {
-      if (STAND.test(l) && seatedOn[who] !== undefined) {
+      if (STAND.test(l) && (seatedOn[who] !== undefined || lyingOn[who])) {
         t = leaveSeat(who, t);
+      } else if (LIE.test(l) && !lyingOn[who]) {
+        let bi: number | undefined = propHits.find(i => props[i].kind === "bed");
+        if (bi === undefined) {
+          let best = 1e9;
+          for (let i = 0; i < props.length; i++) {
+            if (props[i].kind !== "bed") continue;
+            const dd = Math.abs(pxp[i] - px[who]);
+            if (dd < best) { best = dd; bi = i; }
+          }
+        }
+        if (bi !== undefined) {
+          t = leaveSeat(who, t);
+          t = walkTo(who, pxp[bi], pdepthP[bi] - 0.002, t, false);
+          me.actions.push({ t0: t, t1: t + 0.9, posture: "lie" });
+          lyingOn[who] = true; t += 0.9; moveDone = true;
+        }
       } else if (SIT.test(l)) {
         let pi: number | undefined = propHits.find(i => SEATS[props[i].kind] !== undefined);
         if (pi === undefined) {
@@ -313,12 +337,17 @@ export function parseScript(
         tx = cl(tx, 60, W - 60);
         if (enter) fromX = edge(eSide ? eSide === "left" : dirLeft ? true : dirRight ? false : tx < W / 2);
       }
+      const frontIn = enter && /\bfrom (the )?(front|camera|audience|viewer)\b/.test(l);
+      const frontOut = exit && /\b(to|toward|towards|through|into|out) (the )?(front|camera|audience|viewer)\b/.test(l);
+      let fromD: number | undefined;
+      if (frontIn) { fromX = tx; fromD = -1.4; }
+      if (frontOut) { tx = cur; wd = -1.4; }
       if (enter && me.actions.length === 0) me.startHidden = true;
       const speed = run ? 300 : 130;
-      const walkDur = cl(Math.abs(tx - (fromX ?? cur)) / speed, 0.6, 8);
+      const walkDur = frontIn || frontOut ? 2.2 : cl(Math.abs(tx - (fromX ?? cur)) / speed, 0.6, 8);
       const gait: ClipId = run ? "run" : "walk";
       px[who] = tx; pdepth[who] = wd;
-      const mv = { moveTo: tx, fromX, toDepth: wd, enter: enter || undefined, exit: exit || undefined };
+      const mv = { moveTo: tx, fromX, fromDepth: fromD, toDepth: wd, enter: enter || undefined, exit: exit || undefined };
 
       if (gesture && !parallelWalk) {
         const gd = base || Math.max(sayDur, gesture === "talk" ? (sayKnown ? 0.8 : 2.5) : (sayKnown ? 1.6 : 2.2), nod || shake ? 1.3 : 0);
@@ -346,6 +375,13 @@ export function parseScript(
     const pr = props[pi];
     const l = seg.toLowerCase();
     const cur = pxp[pi];
+    const pOn = /\b(turn|switch)\w*\s+on\b|\bturns?\s+on\b|\b(open|opens|opening)\b/.test(l);
+    const pOff = /\b(turn|switch)\w*\s+off\b|\bturns?\s+off\b|\b(close|closes|closing|shut|shuts)\b/.test(l);
+    if ((pOn || pOff) && !ENTER.test(l) && !EXIT.test(l)) {
+      pr.actions.push({ t0, t1: t0 + 0.6, power: pOn && !pOff });
+      return t0 + 0.6;
+    }
+    
     const exit = EXIT.test(l), enter = ENTER.test(l);
     const dirLeft = /\bleft\b/.test(l), dirRight = /\bright\b/.test(l);
     const eSide = l.match(ENTER_SIDE)?.[1], xSide = l.match(EXIT_SIDE)?.[1];
@@ -382,7 +418,20 @@ export function parseScript(
     cam.push({ ...last, t: t0 });
     const tg = findNames(l, -1)[0], tp = findProps(l)[0];
     const named = tg ?? (tp !== undefined ? 1000 + tp : undefined);
+        const pm = l.match(/(\d+(?:\.\d+)?)\s*(?:%|percent)/);
+    if (pm && /zoom|close/.test(l) && named !== undefined) {
+      const pct = cl(+pm[1], 5, 100) / 100;
+      const hgt = named >= 1000 ? 170 : actors[named].def.height;
+      const zoomed: CamKey = { ...last, zoom: 1 + pct * 1.1, y: FOOT - hgt * (0.55 + 0.25 * pct), follow: named, x: posOf(named) };
+      const total = explicit ? +explicit : 3, ramp = Math.min(0.6, total / 3);
+      cam.push({ ...zoomed, t: t0 + ramp });
+      if (/\b(stay|hold|keep)\b/.test(l)) return t0 + ramp;
+      cam.push({ ...zoomed, t: t0 + total - ramp });
+      cam.push({ ...last, t: t0 + total });
+      return t0 + total;
+    }
     if (orbit) {
+    
       const dm = l.match(/(\d+)\s*(?:°|deg)/);
       const deg = dm ? +dm[1] : /half/.test(l) ? 180 : 360;
       shots.push({ t0, t1: t0 + dur, deg: /counter|anti|\bleft\b/.test(l) ? -deg : deg, target: named });
