@@ -296,12 +296,13 @@ export function createRenderer3D(): Renderer3D {
 
   // ---------- posing ----------
   const poseRig = (rig: Rig, st: ReturnType<typeof actorState>, jump: boolean, dt: number) => {
-    const p = st.pose, clip = st.clip, side = st.view === "side";
+    const p = st.pose, clip = st.clip, side = st.walking || st.view === "side";
     const lie = p.lie;
     rig.root.position.set(toX(st.x) + lie * 0.9, 0, toZ(st.depth));
 
     let target = 0;
-    if (side) target = st.face > 0 ? Math.PI / 2 : -Math.PI / 2;
+    if (st.moving) target = st.heading;
+    else if (side) target = st.face > 0 ? Math.PI / 2 : -Math.PI / 2;
     else if (st.view === "back") target = Math.PI;
     else target = cl(st.lookEx * 0.55, -0.55, 0.55);
     if (!rig.init || jump) { rig.angle = target; rig.init = true; }
