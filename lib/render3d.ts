@@ -66,6 +66,15 @@ export function createRenderer3D(): Renderer3D {
   const camera = new THREE.PerspectiveCamera(40, W / H, 0.1, 300);   // the director camera
   const edCam = new THREE.PerspectiveCamera(45, W / H, 0.1, 400);    // the editor camera (separate)
   const hemi = new THREE.HemisphereLight(0xffffff, 0x888888, 1);
+  const sunOff = new THREE.Vector3(10, 20, 10);
+  const followSun = (fx: number, fz: number, half: number) => {
+    if (!env || env.bounds) return;
+    sun.target.position.set(fx, 0, fz);
+    sun.position.set(fx, 0, fz).add(sunOff);
+    const sc = sun.shadow.camera;
+    if (sc.right !== half) { sc.left = -half; sc.right = half; sc.top = half; sc.bottom = -half; sc.updateProjectionMatrix(); }
+    sun.target.updateMatrixWorld();
+  };
   const sun = new THREE.DirectionalLight(0xffffff, 1);
   sun.castShadow = true;
   const shadowSize = Math.min(2048, renderer.capabilities.maxTextureSize);
@@ -231,7 +240,8 @@ export function createRenderer3D(): Renderer3D {
     if (L.sun) {
       const dir = new THREE.Vector3(L.sun.dir[0], L.sun.dir[1], L.sun.dir[2]).normalize();
       sun.color.set(L.sun.color); sun.intensity = L.sun.intensity;
-      sun.position.set(cx, 0, cz).add(dir.clone().multiplyScalar(30));
+      sunOff.copy(dir).multiplyScalar(30);
+      sun.position.set(cx, 0, cz).add(sunOff);
       const disc = new THREE.Mesh(new THREE.SphereGeometry(L.sun.size, 16, 12), new THREE.MeshBasicMaterial({ color: L.sun.disc, fog: false }));
       disc.position.copy(dir.clone().multiplyScalar(100)); skyExtras.add(disc);
     } else {
