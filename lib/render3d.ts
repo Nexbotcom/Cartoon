@@ -208,6 +208,7 @@ export function createRenderer3D(): Renderer3D {
   };
   const resetEdCam = () => {
     const b = env?.bounds;
+    if (env?.view) { ed.tx = 0; ed.ty = 1; ed.tz = env.view.tz; ed.dist = env.view.dist; ed.az = 0.55; ed.el = 0.55; return; }
     if (b) {
       ed.tx = (b.minX + b.maxX) / 2; ed.tz = (b.minZ + b.maxZ) / 2; ed.ty = 1;
       ed.dist = Math.max(b.maxX - b.minX, b.maxZ - b.minZ) * 1.1;
@@ -386,6 +387,7 @@ export function createRenderer3D(): Renderer3D {
     camera.position.set(ox + Math.sin(az) * dist, oy + 0.55 + rise, oz + Math.cos(az) * dist);
     camera.lookAt(ox, oy, oz);
     camera.updateMatrixWorld();
+    return { fx: ox, fz: oz };
   };
 
   // ---------- selection highlight ----------
@@ -509,10 +511,12 @@ export function createRenderer3D(): Renderer3D {
 
     if (o.editor) {
       placeEdCam();
+      followSun(ed.tx, ed.tz, 40);
       if (sky) sky.position.copy(edCam.position);
       renderer.render(scene3, edCam);
     } else {
-      placeCamera(s, t);
+   const fc = placeCamera(s, t);
+      followSun(fc.fx, fc.fz, 16);
       if (sky) sky.position.copy(camera.position);
       renderer.render(scene3, camera);
     }
