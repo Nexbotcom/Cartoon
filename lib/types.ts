@@ -1,6 +1,6 @@
 export type StyleId = "stick" | "flat" | "anime" | "sketch";
 export type Expr = "neutral" | "happy" | "sad" | "angry" | "surprised";
-export type ClipId = "idle" | "walk" | "run" | "wave" | "talk" | "type" | "jump" | "point" | "shrug";
+export type ClipId = "idle" | "walk" | "run" | "wave" | "talk" | "type" | "jump" | "point" | "shrug" | "kick";
 export type View = "front" | "side" | "back";
 export type ThemeId =
   | "day" | "sunset" | "night" | "park" | "room" | "pitch" | "school" | "hospital"
@@ -10,7 +10,7 @@ export type PropKind =
   | "tv" | "door" | "bed" | "tree" | "bench" | "streetlight" | "car"
   | "box" | "cake" | "bag" | "ball" | "goal" | "board"
   | "wardrobe" | "fridge" | "counter" | "rug" | "picture" | "clock" | "window"
-  | "curtains" | "fan" | "locker" | "bin" | "bush" | "fence" | "crowd" | "ivstand";
+  | "curtains" | "fan" | "locker" | "bin" | "bush" | "fence" | "crowd" | "ivstand" | "phone";
 
 export interface CharacterDef {
   id: string; name: string; style: StyleId;
@@ -45,6 +45,7 @@ export interface Action {
   ride?: number;       // actor is inside the prop with this index during [t0, t1]
   posture?: "sit" | "stand" | "lie";
   rot?: number;        // direction (degrees) a seated character faces
+  lin?: boolean;       // move in a straight line at constant speed (a kicked ball)
   power?: boolean;     // for props: switched on / open (true) or off / closed (false)
   open?: boolean;      // for doors: open during [t0, t1]
 }
