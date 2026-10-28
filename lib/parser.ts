@@ -235,7 +235,7 @@ export function parseScript(
     let cx = px[who], cd = pdepth[who];
     for (const p of pts) {
       const m = Math.hypot((p.x - cx) / 150, (p.d - cd) * 8);
-      if (m > 0.05) legs.push({ x: p.x, d: p.d, dur: cl((m * 150) / (run ? 300 : 130), 0.4, 25) });
+      if (m > 0.05) legs.push({ x: p.x, d: p.d, dur: cl((m * 150) / ((run ? 300 : 130) * Math.max(1, Math.sqrt(m / 6))), 0.4, 600) });
       cx = p.x; cd = p.d;
     }
     return legs;
@@ -375,7 +375,7 @@ export function parseScript(
         if (tgt !== undefined && /\b(to|toward|towards|near|beside|next to|approach\w*|over)\b/.test(l)) { tx = px[tgt] + (dx < px[tgt] ? -150 : 150); td = pdepth[tgt]; }
         else if (/cent(er|re)|middle/.test(l)) tx = W / 2;
         else tx = me.x;
-        tx = cl(tx, -700, W + 700);
+        tx = cl(tx, -6000, W + 6000);
         const dur = cl(Math.abs(tx - dx) / (run ? 300 : 130), 0.8, 20);
         if (me.actions.length === 0) me.startHidden = true;
         props[doorHit].actions.push({ t0: t, t1: t + 0.35 + 1.4, open: true });
@@ -473,6 +473,62 @@ export function parseScript(
       }
     }
 
+        // ----- kick the ball -----
+    if (!moveDone && KICK.test(l)) {
+      let bi: number | undefined = propHits.find(i => props[i].kind === "ball");
+      if (bi === undefined) {
+        let best = 1e9;
+        for (let i = 0; i < props.length; i++) {
+          if (props[i].kind !== "ball") continue;
+          const dd = Math.abs(pxp[i] - px[who]);
+          if (dd < best) { best = dd; bi = i; }
+        }
+      }
+      if (bi === undefined) warn(`${me.def.name} cannot kick: there is no Ball on stage.`);
+      else if (holdingOf[who]?.pi === bi) warn(`${me.def.name} is holding the Ball. Put it down first.`);
+      else {
+        const goal = propHits.find(i => props[i].kind === "goal");
+        const tgtA = others[0];
+        const b0x = pxp[bi], b0d = pdepthP[bi];
+        let tX: number, tD: number, endLift = 0;
+        if (goal !== undefined) {
+          const gr = rot(goal), gXm = (pxp[goal] - 640) / 150, gZm = -pdepthP[goal] * 8;
+          tX = Math.round(640 + (gXm - Math.sin(gr) * 0.7) * 150); tD = -(gZm - Math.cos(gr) * 0.7) / 8; endLift = 0.55 * 150;
+        } else if (tgtA !== undefined) { tX = px[tgtA] + (b0x < px[tgtA] ? -45 : 45); tD = pdepth[tgtA]; }
+        else { tX = b0x + (/\bleft\b/.test(l) ? -1 : 1) * 480; tD = b0d; }
+        const dxm = (tX - b0x) / 150, dzm = -(tD - b0d) * 8, len = Math.max(0.3, Math.hypot(dxm, dzm));
+        const nx = dxm / len, nz = dzm / len;
+        const zb = -b0d * 8;
+        const sx = Math.round(b0x - nx * 0.8 * 150), sd = -(zb - nz * 0.8) / 8;
+        t = walkTo(who, sx, sd, t, run, goal !== undefined ? [bi, goal] : [bi]);
+        const ex = Math.round(sx + nx * 0.35 * 150), ed = -((zb - nz * 0.8) + nz * 0.35) / 8;
+        me.actions.push({
+          t0: t, t1: t + 0.85, clip: "kick", moveTo: ex, toDepth: ed,
+          look: goal !== undefined ? props[goal].name : tgtA !== undefined ? actors[tgtA].def.name : undefined,
+        });
+        px[who] = ex; pdepth[who] = ed;
+        const tk = t + 0.45, flight = cl(len / 10, 0.45, 3.2);
+        const apex = goal !== undefined ? Math.min(1.1, len * 0.045) : Math.min(2.2, len * 0.1);
+        const N = 7;
+        for (let i = 0; i < N; i++) {
+          const u1 = (i + 1) / N;
+          props[bi].actions.push({
+            t0: tk + (flight * i) / N, t1: tk + (flight * (i + 1)) / N, lin: true,
+            moveTo: Math.round(b0x + (tX - b0x) * u1), toDepth: b0d + (tD - b0d) * u1,
+            lift: 4 * apex * u1 * (1 - u1) * 150 + endLift * u1,
+          });
+        }
+        let fx = tX, fd = tD;
+        if (goal !== undefined) {
+          fx = tX + Math.round(nx * 12); fd = tD - (nz * 0.1) / 8;
+          props[bi].actions.push({ t0: tk + flight, t1: tk + flight + 0.35, lin: true, moveTo: fx, toDepth: fd, lift: 0 });
+        }
+        pxp[bi] = fx; pdepthP[bi] = fd;
+        maxT = Math.max(maxT, tk + flight + 0.4);
+        t += 0.85; moveDone = true;
+      }
+    }
+
     // ----- ordinary actions -----
     const exit = !moveDone && EXIT.test(l), enter = !moveDone && ENTER.test(l);
     const carryWalk = !moveDone && /\b(carry|carries|bring|brings|take|takes)\b/.test(l) && others.length > 0 && !GIVE.test(l);
@@ -509,7 +565,7 @@ export function parseScript(
         else if (/\bleft\b|\bback(ward)?s?\b/.test(l)) tx = cur - 300;
         else if (/\bright\b|forward/.test(l)) tx = cur + 300;
         else tx = tgt !== undefined ? px[tgt] + (cur < px[tgt] ? -150 : 150) : cur + 300;
-        tx = cl(tx, -700, W + 700);
+        tx = cl(tx, -6000, W + 6000);
         if (enter) fromX = edge(eSide ? eSide === "left" : dirLeft ? true : dirRight ? false : tx < W / 2);
       }
       const frontIn = enter && /\bfrom (the )?(front|camera|audience|viewer)\b/.test(l);
