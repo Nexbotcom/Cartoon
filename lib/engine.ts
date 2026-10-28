@@ -28,7 +28,7 @@ export function posAt(a: Mover, t: number, props: SceneProp[] = []): PosInfo {
     if (m.fromX !== undefined) x = m.fromX;
     if (m.fromDepth !== undefined) d = m.fromDepth;
     const u = t >= m.t1 ? 1 : (t - m.t0) / Math.max(0.01, m.t1 - m.t0);
-    const e = sm(u);
+    const e = m.lin ? u : sm(u);
     if (m.moveTo !== x) face = m.moveTo > x ? 1 : -1;
     const nd = m.toDepth !== undefined ? lerp(d, m.toDepth, e) : d;
     const nl = m.lift !== undefined ? lerp(lift, m.lift, e) : lift;
@@ -69,7 +69,7 @@ export function sitAt(a: { actions: Action[] }, t: number) {
   return last.posture === "sit" ? u : 1 - u;
 }
 // props that can be switched on/off or opened/closed by the script; the value is the starting state
-export const DEFAULT_POWER: Partial<Record<PropKind, boolean>> = { tv: true, lamp: true, fan: true, curtains: true };
+export const DEFAULT_POWER: Partial<Record<PropKind, boolean>> = { tv: true, lamp: true, fan: true, curtains: true, phone: true };
 export function powerAt(p: { actions: Action[] }, t: number, def: boolean) {
   let cur = def ? 1 : 0;
   for (const q of p.actions) {
@@ -103,6 +103,14 @@ function lookVec(s: Scene, look: string, from: number, t: number) {
   const dx = posAt(tg, t, s.props).x - from;
   return { yaw: cl(dx / 8, -38, 38), pitch: 0, ex: cl(dx / 120, -1, 1), ey: 0 };
 }
+// walking toward or away from the camera: feet lift in turn instead of swinging sideways
+export function depthWalkPose(p: Pose, t: number, run: boolean, holding: boolean): Pose {
+  const w = Math.sin(t * (run ? 11 : 7));
+  const lift = (v: number) => Math.max(0, v) * (run ? 40 : 22);
+  const q: Pose = { ...p, lLU: 3, lRU: 3, lLB: lift(w), lRB: lift(-w), lean: 0, bob: -Math.abs(w) * (run ? 8 : 4) };
+  if (!holding) { q.aLU = 7 + w * 4; q.aRU = 7 - w * 4; q.aLB = 10; q.aRB = 10; }
+  return q;
+}
 
 export function actorState(s: Scene, a: Actor, t: number) {
   const ai = s.actors.indexOf(a);
@@ -114,7 +122,8 @@ export function actorState(s: Scene, a: Actor, t: number) {
   const lookA = lastOf(q => !!q.look);
   const viewA = lastOf(q => !!q.view)?.view;
   const say = act.find(q => q.say)?.say;
-  const clip: ClipId = act.find(q => q.clip)?.clip ?? "idle";
+  const curAct = act.find(q => q.clip);
+  const clip: ClipId = curAct?.clip ?? "idle";
   const moving = pos.moving;
 
   const gait: ClipId | null = clip === "run" ? "run" : moving || clip === "walk" ? "walk" : null;
