@@ -148,6 +148,16 @@ export function buildProp3D(k: Kit, kind: PropKind, color: string): THREE.Group 
       g.userData.riders = riders;
       break;
     }
+    case "phone": {
+      bx(g, 0.075, 0.15, 0.012, "#1d2026", 0, 0.075, 0);
+      const scr = emissiveMat("#7fb3ff", 0.8);
+      mesh(g, new THREE.BoxGeometry(0.064, 0.126, 0.004), scr, 0, 0.078, 0.007);
+      anims.push(a => {
+        const c0 = a.power < 0.5 ? "#05060a" : "#7fb3ff";
+        scr.emissive.set(c0); scr.color.set(c0);
+      });
+      break;
+    }
     case "box":
       bx(g, 0.34, 0.3, 0.34, color, 0, 0.15, 0); bx(g, 0.07, 0.31, 0.35, "#f2c94c", 0, 0.15, 0); bx(g, 0.35, 0.07, 0.35, "#f2c94c", 0, 0.18, 0);
       sph(g, 0.045, "#f2c94c", -0.05, 0.34, 0, 1.4, 0.8, 1); sph(g, 0.045, "#f2c94c", 0.05, 0.34, 0, 1.4, 0.8, 1);
