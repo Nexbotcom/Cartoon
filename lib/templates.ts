@@ -4,6 +4,7 @@ export const PART_LABEL: Record<string, string> = {
   back: "Back wall", left: "Left wall", right: "Right wall", front: "Front wall", ceiling: "Ceiling", floor: "Floor",
   decor: "Ceiling lights", stairs: "Stairs", backdrop: "Backdrop", trees: "Trees & plants", clouds: "Clouds",
   ground: "Ground & road", crowd: "Stadium crowd",
+  stand_back: "Back stand", stand_front: "Front stand (behind the camera)", stand_left: "Left stand", stand_right: "Right stand",
 };
 
 // positions are in metres: X left/right, Z front(+) / back(-); y is the height for wall and ceiling things
@@ -21,7 +22,11 @@ export const TEMPLATES: Record<ThemeId, TItem[]> = {
     I("tree", -8, -8), I("tree", -4, -12), I("tree", 6, -9), I("tree", 9, -5.5),
     I("bench", -2, -6), I("bench", 3, -4.5), I("bush", -6, -5), I("bush", 7.5, -7), I("bush", 0.5, -10), I("streetlight", 0, -9.5),
   ],
-  pitch: [I("goal", 0, -9), I("ball", 0.8, -3), I("bench", 6, -11.4), I("bin", -6.5, -11.4)],
+
+  pitch: [
+    I("goal", -29.2, -3, { rot: 90 }), I("goal", 29.2, -3, { rot: -90 }), I("ball", 0, -3),
+    I("bench", -8, -19.8), I("bench", 8, -19.8), I("bin", 12.5, -19.6),
+  ],
   school: [I("tree", -9, -9), I("tree", 10, -9.5), I("bench", -5, -9.5), I("bench", 5, -9.5), I("bin", 7.5, -9), I("bush", -7, -8.2), I("bush", 8.8, -8.2)],
   hospital: [I("tree", -10, -9), I("tree", 10, -9), I("bench", -4, -9.2), I("bench", 4, -9.2), I("bush", -7, -8), I("bush", 7, -8), I("bush", 0, -11.2), I("bin", 6, -8.4)],
   room: [
