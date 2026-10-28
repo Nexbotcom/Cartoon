@@ -23,7 +23,8 @@ const ENTER = /\benters?\b|\bentering\b|\bcomes? in\b|\b(walks?|runs?|drives?) i
 const ENTER_SIDE = /(?:enter\w*|comes? in|arrives?|appears?|from)\s+(?:the\s+)?(?:from\s+)?(?:the\s+)?(left|right)/;
 const EXIT_SIDE = /(?:exit\w*|leave\w*|out|off|away)\b[^,.]*?\b(left|right)/;
 
-const HOLDABLE: string[] = ["box", "cake", "bag", "ball"];
+const HOLDABLE: string[] = ["box", "cake", "bag", "ball", "phone"];
+const KICK = /\b(kick|kicks|kicking|shoot|shoots|shooting|strike|strikes|boot|boots)\b/;
 const SIT = /\b(sit|sits|sitting|seated)\b|\btakes? a seat\b/;
 const STAND = /\b(stands?|standing|gets? up|rises?)\b/;
 const LIE = /\b(lie|lies|lying|lay|lays|sleep|sleeps|sleeping|nap|naps)\b/;
@@ -133,7 +134,14 @@ export function parseScript(
   const standAt = (pi: number, fromX: number): { x: number; d: number } => {
     const h = half(pi), k = props[pi].kind;
     const dir = fromX < pxp[pi] ? -1 : 1;
-    if (FRONT_KINDS.has(k) && !swapped(pi) && Math.abs(Math.cos(rot(pi)) - 1) < 0.2) {
+    if (FRONT_KINDS.has(k)) {
+      const f0: [number, number] = FOOTPRINT[k] ?? [0.5, 0.1];
+      const off = f0[1] * props[pi].scale + 0.6, r0 = rot(pi);
+      const cxm = (pxp[pi] - 640) / 150, czm = -pdepthP[pi] * 8;
+      return { x: Math.round(640 + (cxm + Math.sin(r0) * off) * 150), d: cl(-(czm + Math.cos(r0) * off) / 8, -0.9, 1.4) };
+    }
+    if (false) {
+      
       return { x: pxp[pi] + dir * 60, d: pdepthP[pi] - ((h ? h[1] : 0.2) + 0.5) / 8 };
     }
     return { x: pxp[pi] + dir * ((h ? h[0] : 0.15) * 150 + 52), d: pdepthP[pi] };
