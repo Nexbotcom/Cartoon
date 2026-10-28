@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { ThemeId } from "./types";
 import { Kit, TAU, dk, rnd } from "./kit3d";
+import { buildPitch } from "./pitch3d";
 
 export interface EnvLight {
   sky: string[]; hemi: [string, string, number];
@@ -13,6 +14,7 @@ export interface Env {
   bounds: { minX: number; maxX: number; minZ: number; maxZ: number } | null;
   height: number;
   light: EnvLight;
+  view?: { dist: number; tz: number };
   anim: (t: number, dt: number, alive: boolean) => void;
 }
 
@@ -276,6 +278,7 @@ function buildOutdoor(k: Kit, cfg: OutCfg): Env {
 }
 
 export function buildEnv(k: Kit, theme: ThemeId): Env {
+  if (theme === "pitch") return buildPitch(k);
   const room = ROOMS[theme];
   if (room) return buildRoom(k, room.spec, room.light);
   return buildOutdoor(k, OUT[theme] ?? (OUT.day as OutCfg));
