@@ -640,7 +640,7 @@ const exportVideo = async () => {
                         <button onClick={() => remove(i)} className="px-2 text-red-400">✕</button>
                       </div>
                       <label className="mt-2 block text-xs text-slate-400">Position
-                      <input type="range" min={-600} max={W + 600} value={c.x} onChange={e => patch(i, { x: +e.target.value })} className="w-full accent-violet-500" />
+                      <input type="range" min={-6000} max={W + 6000} value={c.x} onChange={e => patch(i, { x: +e.target.value })} className="w-full accent-violet-500" />
                       </label>
                       <label className="block text-xs text-slate-400">Depth (front to back)
                         <input type="range" min={0} max={1} step={0.05} value={c.depth} onChange={e => patch(i, { depth: +e.target.value })} className="w-full accent-violet-500" />
@@ -674,7 +674,7 @@ const exportVideo = async () => {
                         <button onClick={() => removeProp(i)} className="px-2 text-red-400">✕</button>
                       </div>
                       <label className="mt-2 block text-xs text-slate-400">Position
-                        <input type="range" min={-900} max={W + 900} value={p.x} onChange={e => patchProp(i, { x: +e.target.value })} className="w-full accent-violet-500" />
+                        <input type="range" min={-6000} max={W + 6000} value={p.x} onChange={e => patchProp(i, { x: +e.target.value })} className="w-full accent-violet-500" />
                       </label>
                       <label className="block text-xs text-slate-400">Depth (front to back)
                         <input type="range" min={0} max={1} step={0.05} value={p.depth} onChange={e => patchProp(i, { depth: +e.target.value })} className="w-full accent-violet-500" />
