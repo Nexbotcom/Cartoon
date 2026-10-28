@@ -124,12 +124,20 @@ export function actorState(s: Scene, a: Actor, t: number) {
   const say = act.find(q => q.say)?.say;
   const curAct = act.find(q => q.clip);
   const clip: ClipId = curAct?.clip ?? "idle";
-  const moving = pos.moving;
+    const moving = pos.moving;
+
+  // which way is the character travelling? (X right, Z toward the camera, metres per second)
+  const eps = 0.05, ta = Math.max(0, t - eps), tb = t + eps;
+  const pa0 = posAt(a, ta, s.props), pb0 = posAt(a, tb, s.props);
+  const mx = (pb0.x - pa0.x) / (tb - ta) / 150, mz = (-(pb0.depth - pa0.depth) * 8) / (tb - ta);
+  const speed = Math.hypot(mx, mz);
+  const heading = speed > 1e-4 ? Math.atan2(mx, mz) : pos.face >= 0 ? Math.PI / 2 : -Math.PI / 2;
+  const depthWalk = moving && speed > 1e-4 && Math.abs(mz) > Math.abs(mx) * 1.1;
 
   const gait: ClipId | null = clip === "run" ? "run" : moving || clip === "walk" ? "walk" : null;
   let pose: Pose = { ...BASE, ...clips.idle(t) };
   if (gait) pose = { ...pose, ...clips[gait](t) };
-  if (clip !== "walk" && clip !== "run" && clip !== "idle") pose = { ...pose, ...clips[clip](t) };
+  if (clip !== "walk" && clip !== "run" && clip !== "idle") pose = { ...pose, ...clips[clip](clip === "kick" ? t - (curAct?.t0 ?? t) : t) };
 
   // sitting
   const sit = moving ? 0 : sitAt(a, t);
@@ -184,14 +192,14 @@ export function actorState(s: Scene, a: Actor, t: number) {
     }
   }
 
-  const view: View = clip === "type" ? "front" : sideNow ? "side" : viewA ?? "front";
+  const view: View = clip === "type" ? "front" : sideNow ? (depthWalk ? (mz > 0 ? "front" : "back") : "side") : viewA ?? "front";
     // people who come in from, or leave toward, the camera fade in and out
   let alpha = 1;
   for (const q of a.actions) {
     if (q.enter && q.fromDepth !== undefined && q.fromDepth < 0 && t >= q.t0) alpha = Math.min(alpha, sm(cl((t - q.t0) / 0.5, 0, 1)));
     if (q.exit && (q.toDepth ?? 0) < 0 && t >= q.t0 && t < q.t1) alpha = Math.min(alpha, 1 - sm(cl((t - (q.t1 - 0.5)) / 0.5, 0, 1)));
   }
-  return { x: pos.x, depth: pos.depth, face, view, clip, expr, say, pose, lookEx, moving, holding, alpha, seatRot };
+  return { x: pos.x, depth: pos.depth, face, view, clip, expr, say, pose, lookEx, moving, holding, alpha, seatRot, heading, walking: sideNow, depthWalk };
 }
 
 // where a prop is right now (it follows whoever is carrying it)
@@ -441,7 +449,8 @@ export function renderFrame(c: CanvasRenderingContext2D, s: Scene, t: number, op
             }
       const st = actorState(s, a, t);
       const fy = FOOT - st.depth * 70, sc = 1 - st.depth * 0.22;
-      items.push({ depth: st.depth, order: 1, draw: () => withAlpha(c, st.alpha, () => drawActor(c, a.def, st.pose, st.expr, st.x, fy, sc,
+      items.push({ depth: st.depth, order: 1, draw: () => withAlpha(c, st.alpha, () => drawActor(c, a.def, st.depthWalk ? depthWalkPose(st.pose, t, st.clip === "run", st.holding) : st.pose, st.expr, st.x, fy, sc,                                                                                          
+                                                                                                 
         { view: st.view, face: st.face, seed: Math.floor(t * 8), prop: st.clip === "type" ? "laptop" : undefined })) });
       
       if (st.say) talkers.push({ x: st.x, y: fy - a.def.height * sc * 1.02 - 10, say: st.say });
