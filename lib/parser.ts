@@ -130,22 +130,55 @@ export function parseScript(
     const cx = (pxp[pi] - 640) / 150, cz = -pdepthP[pi] * 8;
     return { minX: cx - h[0] - RAD, maxX: cx + h[0] + RAD, minZ: cz - h[1] - RAD, maxZ: cz + h[1] + RAD };
   };
-  // a good place to stand when going to a prop: in front of tall things, beside everything else
-  const standAt = (pi: number, fromX: number): { x: number; d: number } => {
-    const h = half(pi), k = props[pi].kind;
-    const dir = fromX < pxp[pi] ? -1 : 1;
-    if (FRONT_KINDS.has(k)) {
-      const f0: [number, number] = FOOTPRINT[k] ?? [0.5, 0.1];
-      const off = f0[1] * props[pi].scale + 0.6, r0 = rot(pi);
-      const cxm = (pxp[pi] - 640) / 150, czm = -pdepthP[pi] * 8;
-      return { x: Math.round(640 + (cxm + Math.sin(r0) * off) * 150), d: cl(-(czm + Math.cos(r0) * off) / 8, -0.9, 1.4) };
-    }
-    if (false) {
-      
-      return { x: pxp[pi] + dir * 60, d: pdepthP[pi] - ((h ? h[1] : 0.2) + 0.5) / 8 };
-    }
-    return { x: pxp[pi] + dir * ((h ? h[0] : 0.15) * 150 + 52), d: pdepthP[pi] };
+
+
+
+
+
+
+
+
+
+
+  
+const standAt = (pi: number, fromX: number): { x: number; d: number } => {
+  const h = half(pi);
+  const k = props[pi].kind;
+  const dir = fromX < pxp[pi] ? -1 : 1;
+
+  if (FRONT_KINDS.has(k)) {
+    const f0: [number, number] = FOOTPRINT[k] ?? [0.5, 0.1];
+    const off = f0[1] * props[pi].scale + 0.6;
+    const r0 = rot(pi);
+    const cxm = (pxp[pi] - 640) / 150;
+    const czm = -pdepthP[pi] * 8;
+
+    return {
+      x: Math.round(640 + (cxm + Math.sin(r0) * off) * 150),
+      d: cl(-(czm + Math.cos(r0) * off) / 8, -0.9, 1.4)
+    };
+  }
+
+  const halfWidth = h === null ? 0.15 : h[0];
+
+  return {
+    x: pxp[pi] + dir * (halfWidth * 150 + 52),
+    d: pdepthP[pi]
   };
+};
+
+
+
+
+
+
+
+
+
+
+
+
+  
   const route = (x0: number, d0: number, x1: number, d1: number, ignore: number[]): { x: number; d: number }[] => {
     const A: P = { X: (x0 - 640) / 150, Z: -d0 * 8 }, B: P = { X: (x1 - 640) / 150, Z: -d1 * 8 };
     const bx0 = Math.min(A.X, B.X) - 3, bx1 = Math.max(A.X, B.X) + 3, bz0 = Math.min(A.Z, B.Z) - 3, bz1 = Math.max(A.Z, B.Z) + 3;
