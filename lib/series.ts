@@ -184,4 +184,24 @@ Grandpa: say "Hold on tight. I drive very fast."
 Car: wait 1 second then drive off to the right
 Camera: follow Car`,
   },
+  {
+    name: "S1E7 · The Penalty",
+    note: "Full stadium (3D recommended). Goals at both ends, Kai takes a penalty and kicks the ball into the goal. About 1 min.",
+    theme: "pitch",
+    cast: [who("Kai", 21.8, -3), who("Coach", 20.2, -1), who("Tito", 18.6, -4), who("Jade", 19.4, 0), who("Ben", 17.6, -1.5)],
+    props: [
+      P("goal", "Goal", 29.2, -3, { rot: -90 }), P("goal", "Goal 2", -29.2, -3, { rot: 90 }), P("ball", "Ball", 23.5, -3),
+      P("bench", "Bench", 14, -19.8), P("bin", "Bin", 24, -19.6),
+    ],
+    script: `Camera: follow Kai for 0.1 seconds
+Coach: look at the camera and say "Final of the Class 7B cup. Kai takes the penalty!"
+Tito: look at Kai and say "No pressure, big guy."
+Kai: nod and say "I have trained for this all week."
+Jade: say "Kick it hard, Kai!"
+Kai: kick the Ball to the Goal
+Camera: follow Ball
+Ben: jump and say "Goal! Goal! Goal!"
+Camera: wait 2 seconds then follow Kai
+Kai: wave and say "Thank you, 7B!"`,
+  },
 ];
