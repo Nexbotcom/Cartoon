@@ -128,9 +128,10 @@ export default function Studio() {
         r3.current = m.createRenderer3D();
         setR3ready(true); setNote3("");
       })
-      .catch(() => {
+      .catch((e: unknown) => {
         if (dead) return;
-        setNote3("3D could not start on this device or browser (it needs WebGL). Staying in 2D.");
+        const why = e instanceof Error ? e.message : String(e);
+        setNote3(`3D could not start (${why}). It needs WebGL: in Chrome open Settings, then System, and turn on "Use graphics acceleration when available". Update your graphics driver, or try Edge or Firefox. Staying in 2D.`);
         setMode("2d");
       });
     return () => { dead = true; };
