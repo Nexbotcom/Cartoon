@@ -36,6 +36,7 @@ export const PROP_LIST: { kind: PropKind; label: string; color: string; depth: n
   { kind: "fence", label: "Fence", color: "#c9a77c", depth: 0.6, w: 260 },
   { kind: "crowd", label: "Crowd", color: "#ffffff", depth: 0.5, w: 260 },
   { kind: "ivstand", label: "IV stand", color: "#9aa4b0", depth: 0.4, w: 50 },
+  { kind: "phone", label: "Phone", color: "#1d2026", depth: 0.2, w: 24 },
 ];
 
 // where people can sit: x offsets (px) from the middle of the prop
@@ -327,6 +328,14 @@ export function drawProp(
     case "ivstand": {
       c.fillStyle = "#9aa4b0"; c.fillRect(-2, -170, 4, 170); c.fillRect(-24, -4, 48, 4); c.fillRect(-14, -176, 28, 4);
       rr(c, -8, -150, 16, 28, 5); fl(c, "#cfe9ff");
+      break;
+    }
+    case "phone": {
+      const on = (fx.power ?? 1) > 0.5;
+      rr(c, -10, -34, 20, 34, 4); fl(c, "#1d2026");
+      rr(c, -8, -31, 16, 26, 2); fl(c, on ? "#7fb3ff" : "#0b0c10");
+      if (on) { c.fillStyle = "rgba(255,255,255,0.25)"; c.fillRect(-6, -29, 12, 3); }
+      circle(c, 0, -2.5, 1.6, "#3a3f4b");
       break;
     }
     case "box": {
