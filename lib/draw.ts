@@ -37,6 +37,15 @@ export const clips: Record<ClipId, (t: number) => Partial<Pose>> = {
   type: t => ({ aLU: 18, aLB: -70 + S(t * 14) * 5, aRU: 18, aRB: -70 + S(t * 14 + 1.5) * 5, pitch: 12, bob: S(t * 2) * 0.8 }),
   jump: t => ({ bob: -Math.abs(S(t * 5)) * 55, aLU: 150, aRU: 150, aLB: 10, aRB: 10, lLB: 28, lRB: 28, lLU: 8, lRU: 8 }),
   point: t => ({ aRU: 95 + S(t * 2) * 2, aRB: 0, tilt: -2, aLU: 8 }),
+  kick: lt => {
+    const ease = (a: number, b: number, u: number) => a + (b - a) * (u * u * (3 - 2 * u));
+    const u = Math.min(1, Math.max(0, lt / 0.85));
+    let leg = 0, knee = 0;
+    if (u < 0.4) { const k = u / 0.4; leg = ease(0, -38, k); knee = ease(0, 75, k); }
+    else if (u < 0.58) { const k = (u - 0.4) / 0.18; leg = ease(-38, 82, k); knee = ease(75, 6, k); }
+    else { const k = (u - 0.58) / 0.42; leg = ease(82, 0, k); knee = ease(6, 0, k); }
+    return { lRU: leg, lRB: knee, lLU: 4, lLB: 6, aLU: 26 * S(u * Math.PI), aRU: -20 * S(u * Math.PI), lean: 8 * S(u * Math.PI) };
+  },
   shrug: t => ({ aLU: 38 + S(t * 3) * 3, aLB: 70, aRU: 38 + S(t * 3) * 3, aRB: 70, tilt: 5, pitch: -4, bob: S(t * 3) }),
 };
 
