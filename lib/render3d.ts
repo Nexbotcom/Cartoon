@@ -40,9 +40,23 @@ const dk = (h: string, f: number) => {
 };
 
 export function createRenderer3D(): Renderer3D {
-  const canvas = document.createElement("canvas");
+  let canvas = document.createElement("canvas");
   canvas.width = W; canvas.height = H;
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+    const makeRenderer = (): THREE.WebGLRenderer => {
+    const tries: THREE.WebGLRendererParameters[] = [
+      { antialias: true, preserveDrawingBuffer: true },
+      { antialias: false, preserveDrawingBuffer: true },
+      { antialias: false, preserveDrawingBuffer: true, powerPreference: "low-power" },
+    ];
+    let err: unknown = null;
+    for (const p of tries) {
+      const cv = document.createElement("canvas");
+      cv.width = W; cv.height = H;
+      try { const r = new THREE.WebGLRenderer({ canvas: cv, ...p }); canvas = cv; return r; } catch (e) { err = e; }
+    }
+    throw err instanceof Error ? err : new Error("WebGL is not available in this browser.");
+  };
+  const renderer = makeRenderer();
   renderer.setPixelRatio(1);
   renderer.setSize(W, H, false);
   renderer.shadowMap.enabled = true;
@@ -54,7 +68,8 @@ export function createRenderer3D(): Renderer3D {
   const hemi = new THREE.HemisphereLight(0xffffff, 0x888888, 1);
   const sun = new THREE.DirectionalLight(0xffffff, 1);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
+  const shadowSize = Math.min(2048, renderer.capabilities.maxTextureSize);
+  sun.shadow.mapSize.set(shadowSize, shadowSize);
   sun.shadow.camera.near = 1; sun.shadow.camera.far = 120;
   sun.shadow.bias = -0.0005;
   scene3.add(hemi, sun, sun.target);
