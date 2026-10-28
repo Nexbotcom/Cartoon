@@ -17,7 +17,7 @@ const GROUPS: { label: string; kinds: PropKind[] }[] = [
   { label: "Hospital", kinds: ["bed", "ivstand", "curtains", "chair", "locker"] },
   { label: "Outdoors", kinds: ["tree", "bush", "bench", "streetlight", "fence", "car", "bin"] },
   { label: "Sports & crowd", kinds: ["goal", "ball", "crowd", "bench"] },
-  { label: "Small things", kinds: ["box", "cake", "bag", "ball"] },
+  { label: "Small things", kinds: ["box", "cake", "bag", "ball", "phone"] },
 ];
 const labelOf = (k: PropKind) => PROP_LIST.find(p => p.kind === k)?.label ?? k;
 
