@@ -593,7 +593,12 @@ const exportVideo = async () => {
                   </button>
                 </div>
                 {err && <p className="mt-2 text-sm text-red-400">{err}</p>}
-                {scene.warnings.length > 0 && (
+                {(scene.notes ?? []).length > 0 && (
+  <div className="mt-2 space-y-1 rounded-xl border border-sky-400/30 bg-sky-500/10 p-2 text-xs text-sky-200">
+    {(scene.notes ?? []).map((w, i) => <p key={i}>✓ {w}</p>)}
+  </div>
+)}
+{scene.warnings.length > 0 && (
                   <div className="mt-2 space-y-1 rounded-xl border border-amber-400/30 bg-amber-500/10 p-2 text-xs text-amber-200">
                     {scene.warnings.map((w, i) => <p key={i}>⚠ {w}</p>)}
                   </div>
@@ -610,6 +615,7 @@ const exportVideo = async () => {
                 <p>Doors and cars: <span className="text-slate-200">Sam: enter through the Door and walk to Mina</span>, <span className="text-slate-200">Sam: get in the Car and drive off to the right</span>, <span className="text-slate-200">get out of the Car</span>.</p>
                 <p>360° camera (3D mode only, only when you write it): <span className="text-slate-200">Camera: orbit around Sam for 5 seconds</span>, <span className="text-slate-200">Camera: wait 3 seconds then orbit around Sam for 5 seconds</span>. Add <span className="text-slate-200">left</span> to spin the other way.</p>
                 <p>Voices: every quoted line is spoken by the voice named like the character. Change a voice in the Character tab. Speech bubbles last as long as the audio.</p>
+                <p>Camera: <span className="text-white">zoom on Sam 5x</span> (up to 10x, stays), <span className="text-white">zoom on Sam 8x for 3 seconds</span> (holds, then returns), <span className="text-white">from the right / left / behind / above</span>, <span className="text-white">back to normal</span>, <span className="text-white">orbit around Sam</span> (slow, 15° per second; add <span className="text-white">for 20 seconds</span>, <span className="text-white">speed 2</span> or <span className="text-white">slowly</span>).</p>
                 <p>New: <span className="text-slate-200">Camera: zoom on Sam 50 percent</span> (zooms in half way, then returns after 3 seconds; add <span className="text-slate-200">for 5 seconds</span> or <span className="text-slate-200">and stay</span>), <span className="text-slate-200">Sam: enter from the front</span>, <span className="text-slate-200">walk out toward the camera</span>, <span className="text-slate-200">Sam: lie on the Bed</span>, <span className="text-slate-200">TV: turn off</span>, <span className="text-slate-200">Fan: turn on</span>, <span className="text-slate-200">Curtains: close</span>, <span className="text-slate-200">Door: open</span>.</p>
               </div>
             </div>
