@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { CharacterDef, Scene, ThemeId } from "./types";
-import { FOOT, H, W, actorState, camAt, drawBubble, posAt, propPlace, visibleAt } from "./engine";
+import { FOOT, H, W, actorState, camAt, drawBubble, posAt, propPlace, smoothPose, visibleAt } from "./engine";
 import { AnimIn, D, TAU, cl, lerp, makeKit, sm } from "./kit3d";
 import { Env, buildEnv } from "./env3d";
 import { RiderHead, buildProp3D } from "./props3d";
@@ -25,14 +25,26 @@ export interface Renderer3D {
   dispose(): void;
 }
 
+interface HandRig { g: THREE.Group; fingers: THREE.Group[]; thumb: THREE.Group }
 interface Rig {
   sig: string; root: THREE.Group; body: THREE.Group; torso: THREE.Group; neck: THREE.Group;
   armL: THREE.Group; elL: THREE.Group; armR: THREE.Group; elR: THREE.Group;
   legL: THREE.Group; knL: THREE.Group; legR: THREE.Group; knR: THREE.Group;
   eyes: { g: THREE.Group; pup: THREE.Group }[]; brows: THREE.Mesh[];
   mFlat: THREE.Mesh; mSmile: THREE.Mesh; mFrown: THREE.Mesh; mOpen: THREE.Mesh;
-  laptop: THREE.Group; angle: number; init: boolean; s: number;
+  laptop: THREE.Group; angle: number; init: boolean; s: number; handL: HandRig; handR: HandRig;
 }
+const shortest = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
+const aLerp = (a: number, b: number, u: number) => a + shortest(b - a) * u;
+// steady speed in the middle, soft start and stop (r = share of the time spent easing at each end)
+const trap = (u: number, r: number) => {
+  if (u <= 0) return 0;
+  if (u >= 1) return 1;
+  if (u < r) return (u * u) / (2 * r * (1 - r));
+  if (u > 1 - r) return 1 - ((1 - u) * (1 - u)) / (2 * r * (1 - r));
+  return (u - r / 2) / (1 - r);
+};
+const tmpV = new THREE.Vector3();
 const dk = (h: string, f: number) => {
   if (h[0] !== "#" || h.length < 7) return h;
   const n = parseInt(h.slice(1, 7), 16);
@@ -42,7 +54,7 @@ const dk = (h: string, f: number) => {
 export function createRenderer3D(): Renderer3D {
   let canvas = document.createElement("canvas");
   canvas.width = W; canvas.height = H;
-    const makeRenderer = (): THREE.WebGLRenderer => {
+  const makeRenderer = (): THREE.WebGLRenderer => {
     const tries: THREE.WebGLRendererParameters[] = [
       { antialias: true, preserveDrawingBuffer: true },
       { antialias: false, preserveDrawingBuffer: true },
@@ -121,10 +133,19 @@ export function createRenderer3D(): Renderer3D {
       limb(sh, 0.045 * b, 0.29, skin);
       const el = new THREE.Group(); el.position.y = -0.29; sh.add(el);
       limb(el, 0.04 * b, 0.27, skin);
-      sph(el, 0.052, skin, 0, -0.29, 0);
+      // hand with four fingers and a thumb
+      const hg = new THREE.Group(); hg.position.y = -0.27; el.add(hg);
+      sph(hg, 0.04, skin, 0, -0.035, 0, 1, 1.15, 0.55);
+      const fingers = [-0.021, -0.007, 0.007, 0.021].map((fx, i) => {
+        const f = new THREE.Group(); f.position.set(fx, -0.07, 0); hg.add(f);
+        limb(f, 0.0115, [0.052, 0.058, 0.056, 0.046][i], skin);
+        return f;
+      });
+      const thumb = new THREE.Group(); thumb.position.set(-sgn * 0.034, -0.03, 0.008); hg.add(thumb);
+      limb(thumb, 0.013, 0.045, skin);
       if (def.sleeve === "long") { limb(sh, 0.054 * b, 0.29, top); limb(el, 0.047 * b, 0.2, top); }
       else limb(sh, 0.058 * b, 0.17, top);
-      return { sh, el };
+      return { sh, el, hand: { g: hg, fingers, thumb } as HandRig };
     };
     const AL = mkArm(-1), AR = mkArm(1);
 
@@ -182,7 +203,7 @@ export function createRenderer3D(): Renderer3D {
       armL: AL.sh, elL: AL.el, armR: AR.sh, elR: AR.el,
       legL: L.lg, knL: L.kn, legR: R.lg, knR: R.kn,
       eyes, brows, mFlat, mSmile, mFrown, mOpen, laptop,
-      angle: 0, init: false, s: def.height / 300,
+      angle: 0, init: false, s: def.height / 300, handL: AL.hand, handR: AR.hand,
     };
   };
 
@@ -298,7 +319,8 @@ export function createRenderer3D(): Renderer3D {
   const poseRig = (rig: Rig, st: ReturnType<typeof actorState>, jump: boolean, dt: number) => {
     const p = st.pose, clip = st.clip, side = st.walking || st.view === "side";
     const lie = p.lie;
-    rig.root.position.set(toX(st.x) + lie * 0.9, 0, toZ(st.depth));
+    const seatA = (st.seatRot ?? 0) * D;            // direction of the chair or bed we are on
+    rig.root.position.set(toX(st.x) + lie * 0.9 * Math.cos(seatA), 0, toZ(st.depth) - lie * 0.9 * Math.sin(seatA));
 
     let target = 0;
     if (st.moving) target = st.heading;
@@ -306,21 +328,22 @@ export function createRenderer3D(): Renderer3D {
     else if (st.view === "back") target = Math.PI;
     else target = cl(st.lookEx * 0.55, -0.55, 0.55);
     if (!rig.init || jump) { rig.angle = target; rig.init = true; }
-    else {
-      const dA = Math.atan2(Math.sin(target - rig.angle), Math.cos(target - rig.angle));
-      rig.angle += dA * (1 - Math.exp(-dt * 12));
-    }
-    rig.root.rotation.y = lerp(rig.angle, Math.PI / 2, lie);
-    
+    else rig.angle += shortest(target - rig.angle) * (1 - Math.exp(-dt * 12));
+    const faceA = aLerp(rig.angle, seatA, p.sit);
+    rig.root.rotation.y = aLerp(faceA, seatA + Math.PI / 2, lie);
+    // a little hip sway and shoulder twist while walking
+    const sw = st.walking ? cl(p.lLU / (clip === "run" ? 48 : 26), -1, 1) : 0;
     rig.body.position.y = -p.bob * 0.0058 - p.sit * 0.27 + lie * 0.78;
-    const seatA = (st.seatRot ?? 0) * D;
-    const faceA = rig.angle + Math.atan2(Math.sin(seatA - rig.angle), Math.cos(seatA - rig.angle)) * p.sit;
-    rig.root.rotation.y = lerp(faceA, Math.PI / 2, lie);
-    rig.torso.rotation.x = p.lean * D;
+    rig.body.rotation.set(-lie * Math.PI / 2, -0.05 * sw, 0.015 * sw);
+    rig.torso.rotation.set(p.lean * D, 0.1 * sw, 0);
 
     const setArm = (sh: THREE.Group, el: THREE.Group, aU: number, aB: number, sgn: number) => {
       sh.rotation.set(0, 0, 0); el.rotation.set(0, 0, 0);
-      if (st.holding) { sh.rotation.set(-0.8, 0, sgn * 0.12); el.rotation.x = -1.15; return; }
+      if (st.holding && (!st.oneHand || sgn > 0)) {
+        if (st.oneHand) { sh.rotation.set(-0.55, 0, 0.18); el.rotation.x = -1.75; }   // phone: one hand up in front
+        else { sh.rotation.set(-0.8, 0, sgn * 0.12); el.rotation.x = -1.15; }
+        return;
+      }
       if (clip === "type") { sh.rotation.x = -0.55; sh.rotation.z = sgn * 0.12; el.rotation.x = -1.45; return; }
       if (clip === "point" && sgn > 0) { sh.rotation.x = -1.55; sh.rotation.z = 0.15; return; }
       if (side) { sh.rotation.x = -aU * D; sh.rotation.z = sgn * 0.08; el.rotation.x = -aB * D; }
@@ -342,8 +365,18 @@ export function createRenderer3D(): Renderer3D {
     setLeg(rig.legL, rig.knL, p.lLU, p.lLB, -1);
     setLeg(rig.legR, rig.knR, p.lRU, p.lRB, 1);
 
+    // fingers
+    const curl = (h: HandRig, sgn: number, c: number, indexOut = false) => {
+      const idx = sgn > 0 ? 0 : 3;
+      h.fingers.forEach((f, i) => f.rotation.set(0, 0, -sgn * (indexOut && i === idx ? 0.05 : c)));
+      h.thumb.rotation.z = -sgn * (0.5 - Math.min(c, 1.2) * 0.2);
+    };
+    const relaxed = clip === "run" ? 1.2 : clip === "type" ? 0.6 : clip === "talk" ? 0.25 : 0.35;
+    curl(rig.handL, -1, st.holding && !st.oneHand ? 0.9 : relaxed);
+    curl(rig.handR, 1, st.holding ? 0.9 : clip === "wave" ? 0.08 : clip === "point" ? 1.4 : relaxed, clip === "point" && !st.holding);
+
     const bodyYaw = side || st.view === "back" ? 0 : cl(st.lookEx * 0.55, -0.55, 0.55);
-    rig.neck.rotation.set(cl(p.pitch, -35, 35) * D, cl(p.yaw * D - bodyYaw * 0.7, -1.0, 1.0), p.tilt * D);
+    rig.neck.rotation.set(cl(p.pitch, -35, 35) * D, cl(p.yaw * D - bodyYaw * 0.7 - 0.07 * sw, -1.0, 1.0), p.tilt * D);
 
     const open = Math.max(p.mouth, st.expr === "surprised" ? 0.5 : 0);
     const talking = open > 0.12;
@@ -364,28 +397,30 @@ export function createRenderer3D(): Renderer3D {
     rig.laptop.visible = clip === "type";
   };
 
-  // ---------- director camera (the 2D camera lines, plus 360 orbit shots when asked) ----------
+  // ---------- director camera: angle, zoom up to 10x, and steady 360 orbits ----------
   const placeCamera = (s: Scene, t: number) => {
     const c2 = camAt(s, t);
-    const tx = toX(c2.x), ty = cl((FOOT - c2.y) / 200, 0.5, 2.2);
-    const dist = 7.2 / c2.zoom;
-    let az = 0, rise = 0, ox = tx, oy = ty, oz = 0;
+    const tx = toX(c2.x), ty = cl((FOOT - c2.y) / 171, 0.4, 3);   // 171 px per metre: a 300 px person is 1.75 m
+    const dist = 7.2 / c2.zoom;                                    // 10x zoom = 0.72 m from the face
+    let az = c2.az * D, rise = 0, ox = tx, oy = ty, oz = 0;
     for (const sh of s.shots) {
-      const u = cl((t - sh.t0) / Math.max(0.01, sh.t1 - sh.t0), 0, 1);
-      az += sh.deg * D * sm(u);
+      const len = Math.max(0.01, sh.t1 - sh.t0);
+      const u = cl((t - sh.t0) / len, 0, 1);
+      az += sh.deg * D * trap(u, Math.min(0.2, 1.5 / Math.max(1, len)));   // steady speed, gentle start and stop
       if (t >= sh.t0 && t <= sh.t1) {
-        rise += Math.sin(Math.PI * u) * 0.35;
+        rise += Math.sin(Math.PI * u) * 0.25 * Math.min(1, dist / 4);
         if (sh.target !== undefined) {
           const ent = sh.target >= 1000 ? s.props[sh.target - 1000] : s.actors[sh.target];
           if (ent) {
             const pe = posAt(ent, t, s.props);
-            const w = sm(cl((t - sh.t0) / 0.8, 0, 1)) * (1 - sm(cl((t - (sh.t1 - 0.8)) / 0.8, 0, 1)));
+            const w = sm(cl((t - sh.t0) / 1.5, 0, 1)) * (1 - sm(cl((t - (sh.t1 - 1.5)) / 1.5, 0, 1)));
             ox = lerp(tx, toX(pe.x), w); oz = lerp(0, toZ(pe.depth), w); oy = lerp(ty, 1.15, w);
           }
         }
       }
     }
-    camera.position.set(ox + Math.sin(az) * dist, oy + 0.55 + rise, oz + Math.cos(az) * dist);
+    const el = c2.el * D, ce = Math.cos(el);
+    camera.position.set(ox + Math.sin(az) * ce * dist, oy + Math.sin(el) * dist + rise, oz + Math.cos(az) * ce * dist);
     camera.lookAt(ox, oy, oz);
     camera.updateMatrixWorld();
     return { fx: ox, fz: oz };
@@ -456,7 +491,8 @@ export function createRenderer3D(): Renderer3D {
         if (sr.say && a.actions.some(q => q.ride !== undefined && t >= q.t0 && t < q.t1)) talkers.push({ x: toX(sr.x), y: 2.1, z: toZ(sr.depth), say: sr.say });
         return;
       }
-      const st = actorState(s, a, t);
+      const st0 = actorState(s, a, t);
+      const st = { ...st0, pose: smoothPose("3d" + i, st0.pose, t) };
       poseRig(rig, st, jump, dt);
       sits[i] = st.pose.sit;
       if (st.say) talkers.push({ x: toX(st.x), y: 1.86 * rig.s, z: toZ(st.depth), say: st.say });
@@ -471,7 +507,14 @@ export function createRenderer3D(): Renderer3D {
       const pl = propPlace(s, p, t);
       const holder = pl.held ? rigs[pl.by] : undefined;
       const rotY = (p.rot ?? 0) * D;
-      if (pl.held && holder) {
+      po.g.rotation.order = "YXZ"; po.g.rotation.set(0, 0, 0);
+      if (pl.held && holder && p.kind === "phone") {
+        // a phone sits in the right hand, screen toward the face
+        holder.root.updateMatrixWorld(true);
+        holder.handR.g.getWorldPosition(tmpV);
+        po.g.position.set(tmpV.x, tmpV.y - 0.04 * holder.s, tmpV.z);
+        po.g.rotation.set(-0.35, holder.angle + Math.PI, 0);
+      } else if (pl.held && holder) {
         po.g.position.set(
           holder.root.position.x + Math.sin(holder.angle) * 0.32 * holder.s,
           (0.85 - (sits[pl.by] ?? 0) * 0.27) * holder.s,
@@ -516,7 +559,7 @@ export function createRenderer3D(): Renderer3D {
       if (sky) sky.position.copy(edCam.position);
       renderer.render(scene3, edCam);
     } else {
-   const fc = placeCamera(s, t);
+      const fc = placeCamera(s, t);
       followSun(fc.fx, fc.fz, 16);
       if (sky) sky.position.copy(camera.position);
       renderer.render(scene3, camera);
