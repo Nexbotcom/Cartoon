@@ -66,8 +66,8 @@ export interface PropMember {
 }
 export interface SceneProp extends PropMember { actions: Action[]; holds: Hold[]; startHidden?: boolean }
 
-// follow: 0..999 = actor index, 1000+ = prop index + 1000
-export interface CamKey { t: number; x: number; y: number; zoom: number; follow?: number }
+// follow: 0..999 = actor index, 1000+ = prop index + 100
+export interface CamKey { t: number; x: number; y: number; zoom: number; follow?: number; az?: number; el?: number }
 // A 360 / orbit camera move. Only used by the 3D mode, and only where the script asks for it.
 export interface Shot3D { t0: number; t1: number; deg: number; target?: number }
-export interface Scene { duration: number; actors: Actor[]; props: SceneProp[]; cam: CamKey[]; shots: Shot3D[]; warnings: string[] }
+export interface Scene { duration: number; actors: Actor[]; props: SceneProp[]; cam: CamKey[]; shots: Shot3D[]; warnings: string[]; notes?: string[] }
