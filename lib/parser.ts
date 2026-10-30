@@ -101,6 +101,8 @@ export function parseScript(
   const shots: Shot3D[] = [];
   const warnings: string[] = [];
   const warn = (m: string) => { if (!warnings.includes(m)) warnings.push(m); };
+  const notes: string[] = [];
+  
   const seatedOn: (number | undefined)[] = actors.map(() => undefined);
   const seatSlot: number[] = actors.map(() => -1);
   const seatOcc: Record<number, (number | undefined)[]> = {};
@@ -268,16 +270,19 @@ const standAt = (pi: number, fromX: number): { x: number; d: number } => {
     let cx = px[who], cd = pdepth[who];
     for (const p of pts) {
       const m = Math.hypot((p.x - cx) / 150, (p.d - cd) * 8);
-      if (m > 0.05) legs.push({ x: p.x, d: p.d, dur: cl((m * 150) / ((run ? 300 : 130) * Math.max(1, Math.sqrt(m / 6))), 0.4, 600) });
+      if (m > 0.05) legs.push({ x: p.x, d: p.d, dur: m });
       cx = p.x; cd = p.d;
     }
+    const total = legs.reduce((s, g) => s + g.dur, 0);
+    const speed = (run ? 300 : 130) * Math.max(1, Math.sqrt(total / 6));
+    legs.forEach(g => { g.dur = cl((g.dur * 150) / speed, 0.4, 600); });
     return legs;
   };
   const pushLegs = (who: number, t0: number, legs: Leg[], run: boolean, stretch = 1): number => {
     let t = t0;
-    for (const g of legs) {
+    for (const [gi, g] of legs.entries()) {
       const dur = g.dur * stretch;
-      actors[who].actions.push({ t0: t, t1: t + dur, clip: run ? "run" : "walk", moveTo: g.x, toDepth: g.d });
+      actors[who].actions.push({ t0: t, t1: t + dur, clip: run ? "run" : "walk", moveTo: g.x, toDepth: g.d, ease: [gi === 0 ? Math.min(0.5, Math.max(0.08, 0.5 / Math.max(0.5, dur))) : 0, gi === legs.length - 1 ? Math.min(0.5, Math.max(0.08, 0.5 / Math.max(0.5, dur))) : 0] });
       t += dur;
     }
     return t;
@@ -694,7 +699,78 @@ const standAt = (pi: number, fromX: number): { x: number; d: number } => {
   };
 
   // ---------- one step of a camera line ----------
-  const camSeg = (seg: string, t0: number): number => {
+    const camSeg = (seg: string, t0: number): number => {
+    const l = seg.toLowerCase();
+    const explicit = l.match(/(\d+(?:\.\d+)?)\s*(?:s\b|sec)/)?.[1];
+    const slow = /\b(slow|slowly|gentle|gently)\b/.test(l);
+    const fast = /\b(fast|quick|quickly|rapid)\b/.test(l);
+    const snap = /\b(instant|instantly|cut|snap)\b/.test(l);
+    const tg = findNames(l, -1)[0], tp = findProps(l)[0];
+    const named = tg ?? (tp !== undefined ? 1000 + tp : undefined);
+    const last = cam[cam.length - 1];
+
+    // steady orbit: 15 degrees per second unless you say otherwise
+    if (/\b(360|orbit\w*|spin\w*|revolv\w*|rotate\w* around|circl\w* around)\b/.test(l)) {
+      const dps = l.match(/(\d+(?:\.\d+)?)\s*(?:°|degrees?|deg)\s*(?:per|a|\/)\s*(?:s\b|sec)/)?.[1];
+      const dm = l.match(/(\d+(?:\.\d+)?)\s*(?:°|degrees?|deg)\b/)?.[1];
+      const sp = l.match(/\bspeed\s*(?:of\s*)?(\d+(?:\.\d+)?)/)?.[1];
+      const rate = dps ? +dps : 15 * (sp ? +sp : 1) * (slow ? 0.5 : fast ? 2.5 : 1);
+      let deg = dm && !dps ? +dm : /half/.test(l) ? 180 : 360;
+      let dur: number;
+      if (explicit) { dur = +explicit; if (dps) deg = rate * dur; } else dur = Math.max(1, deg / rate);
+      cam.push({ ...last, t: t0 });
+      shots.push({ t0, t1: t0 + dur, deg: /counter|anti|\bleft\b/.test(l) ? -deg : deg, target: named });
+      cam.push({ ...last, t: t0 + dur });
+      return t0 + dur;
+    }
+
+    // camera angle
+    const reset = /\b(back to normal|reset|normal view|default view)\b/.test(l);
+    let ang: { az: number; el: number } | null = null;
+    if (reset) ang = { az: 0, el: 3 };
+    else if (/front.?right|right.?front/.test(l)) ang = { az: 45, el: 8 };
+    else if (/front.?left|left.?front/.test(l)) ang = { az: -45, el: 8 };
+    else if (/back.?right|right.?back|behind.?right/.test(l)) ang = { az: 135, el: 8 };
+    else if (/back.?left|left.?back|behind.?left/.test(l)) ang = { az: -135, el: 8 };
+    else if (/\b(top|above|overhead|bird\w*|aerial|top.?down)\b/.test(l)) ang = { az: 0, el: 82 };
+    else if (/\bhigh angle\b/.test(l)) ang = { az: last.az ?? 0, el: 35 };
+    else if (/\blow angle\b/.test(l)) ang = { az: last.az ?? 0, el: -8 };
+    else if (/\bfrom (the )?right\b|\bright side\b/.test(l)) ang = { az: 90, el: 6 };
+    else if (/\bfrom (the )?left\b|\bleft side\b/.test(l)) ang = { az: -90, el: 6 };
+    else if (/\bfrom (the )?(behind|back|rear)\b|\bbehind\b/.test(l)) ang = { az: 180, el: 6 };
+    else if (/\bfrom (the )?front\b|\bfront view\b/.test(l)) ang = { az: 0, el: 3 };
+
+    // zoom by a factor, up to 10x: "zoom on Sam 5x"
+    const zx = l.match(/(\d+(?:\.\d+)?)\s*(?:x\b|×|times)/)?.[1];
+    const zoomWord = /\b(zoom|close.?up|push in|closer)\b/.test(l);
+    if (!ang && !(zx && zoomWord)) return camSegOld(seg, t0);
+
+    const ramp = snap ? 0.1 : slow ? 4 : fast ? 0.8 : 1.6;
+    let over: Partial<CamKey> = {};
+    if (reset || (/\b(zoom out|pull back|wide)\b/.test(l) && !zx)) over = { zoom: 1, y: H / 2, x: W / 2, follow: undefined };
+    if (zx && zoomWord) {
+      const z = cl(+zx, 1.05, 10);
+      const idx = named ?? last.follow ?? (actors.length ? 0 : undefined);
+      const hgt = idx === undefined ? 300 : idx >= 1000 ? 170 : actors[idx].def.height;
+      const k = 0.55 + 0.38 * cl((z - 2) / 4, 0, 1);   // aim higher (at the face) the closer we get
+      over = { zoom: z, y: FOOT - hgt * k, follow: idx, x: idx !== undefined ? posOf(idx) : last.x };
+    }
+    const goal: CamKey = { ...last, ...over, ...(ang ? { az: ang.az, el: ang.el } : {}) };
+    cam.push({ ...last, t: t0 });
+    cam.push({ ...goal, t: t0 + ramp });
+    if (explicit) {                                     // "for 3 seconds": hold, then go back
+      const hold = +explicit;
+      cam.push({ ...goal, t: t0 + ramp + hold });
+      cam.push({ ...last, t: t0 + 2 * ramp + hold });
+      return t0 + 2 * ramp + hold;
+    }
+    return t0 + ramp;                                   // otherwise it stays until the next camera line
+  };
+  const camSegOld = (seg: string, t0: number): number => {
+    
+
+
+    
     const l = seg.toLowerCase();
     const explicit = l.match(/(\d+(?:\.\d+)?)\s*(?:s\b|sec)/)?.[1];
     const orbit = /\b(360|orbit\w*|spin\w*|revolv\w*|rotate\w* around|circl\w* around)\b/.test(l);
