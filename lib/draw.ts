@@ -170,7 +170,15 @@ export function drawActor(
     } else {
       seg(sx, sy, limb * 0.56, sx + (ex - sx) * 0.62, sy + (ey - sy) * 0.62, limb * 0.52, top, 5);
     }
-    paint(circ(wx + dx2 * limb * 0.2, wy + dy2 * limb * 0.2, limb * 0.42), col(sk), 0, limb * 0.12);
+        const hx = wx + dx2 * limb * 0.2, hy = wy + dy2 * limb * 0.2;
+    if (!L.stick) {
+      const dir0 = Math.atan2(dx2, dy2);
+      [-0.62, -0.2, 0.2, 0.62].forEach((o, i) => {
+        const aa = dir0 + o, len = limb * (i === 1 || i === 2 ? 0.95 : 0.8);
+        seg(hx, hy, limb * 0.13, hx + Math.sin(aa) * len, hy + Math.cos(aa) * len, limb * 0.1, sk, 20 + i);
+      });
+    }
+    paint(circ(hx, hy, limb * 0.4), col(sk), 0, limb * 0.12);
   };
 
   // ---------- body shapes ----------
