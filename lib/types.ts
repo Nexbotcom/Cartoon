@@ -45,7 +45,8 @@ export interface Action {
   ride?: number;       // actor is inside the prop with this index during [t0, t1]
   posture?: "sit" | "stand" | "lie";
   rot?: number;        // direction (degrees) a seated character faces
-  lin?: boolean;       // move in a straight line at constant speed (a kicked ball)
+  lin?: boolean; // move in a straight line at constant speed (a kicked ball)
+   ease?: [number, number]; // fraction of the move spent speeding up / slowing down
   power?: boolean;     // for props: switched on / open (true) or off / closed (false)
   open?: boolean;      // for doors: open during [t0, t1]
 }
