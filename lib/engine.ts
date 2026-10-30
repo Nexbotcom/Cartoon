@@ -8,11 +8,20 @@ const lerp = (a: number, b: number, u: number) => a + (b - a) * u;
 const cl = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 const rnd = (i: number, k: number) => { const s = Math.sin(i * 127.1 + k * 311.7) * 43758.5; return s - Math.floor(s); };
 
+// speed profile of one move: eases in over fraction a, runs steadily, eases out over fraction b
+export const shape = (u: number, a: number, b: number) => {
+  if (a <= 0 && b <= 0) return u;
+  const v = 1 / (1 - (a + b) / 2);
+  if (a > 0 && u < a) return (v * u * u) / (2 * a);
+  if (b > 0 && u > 1 - b) return 1 - (v * (1 - u) * (1 - u)) / (2 * b);
+  return v * (u - a / 2);
+};
+
 type Mover = { x: number; depth: number; actions: Action[]; startHidden?: boolean };
-export interface PosInfo { x: number; face: number; moving: boolean; depth: number; lift: number }
+export interface PosInfo { x: number; face: number; moving: boolean; depth: number; lift: number; trav: number }
 
 export function posAt(a: Mover, t: number, props: SceneProp[] = []): PosInfo {
-  let x = a.x, d = a.depth, lift = 0, face = 1;
+  let x = a.x, d = a.depth, lift = 0, face = 1, trav = 0;
   for (const m of a.actions) {
     if (m.ride !== undefined) {                       // riding inside a prop (a car): follow it
       if (t < m.t0) break;
@@ -20,7 +29,7 @@ export function posAt(a: Mover, t: number, props: SceneProp[] = []): PosInfo {
       if (!pr) continue;
       const pp = posAt(pr, Math.min(t, m.t1), props);
       x = pp.x; d = pp.depth; face = pp.face;
-      if (t < m.t1) return { x, face, moving: pp.moving, depth: d, lift: 0 };
+      if (t < m.t1) return { x, face, moving: pp.moving, depth: d, lift: 0, trav };
       continue;
     }
     if (m.moveTo === undefined) continue;
@@ -28,14 +37,15 @@ export function posAt(a: Mover, t: number, props: SceneProp[] = []): PosInfo {
     if (m.fromX !== undefined) x = m.fromX;
     if (m.fromDepth !== undefined) d = m.fromDepth;
     const u = t >= m.t1 ? 1 : (t - m.t0) / Math.max(0.01, m.t1 - m.t0);
-    const e = m.lin ? u : sm(u);
+    const e = m.lin ? u : m.ease ? shape(u, m.ease[0], m.ease[1]) : sm(u);
     if (m.moveTo !== x) face = m.moveTo > x ? 1 : -1;
     const nd = m.toDepth !== undefined ? lerp(d, m.toDepth, e) : d;
     const nl = m.lift !== undefined ? lerp(lift, m.lift, e) : lift;
-    if (u < 1) return { x: lerp(x, m.moveTo, e), face, moving: true, depth: nd, lift: nl };
-    x = m.moveTo; d = nd; lift = nl;
+    const len = Math.hypot((m.moveTo - x) / 150, ((m.toDepth ?? d) - d) * 8);
+    if (u < 1) return { x: lerp(x, m.moveTo, e), face, moving: true, depth: nd, lift: nl, trav: trav + len * e };
+    x = m.moveTo; d = nd; lift = nl; trav += len;
   }
-  return { x, face, moving: false, depth: d, lift };
+  return { x, face, moving: false, depth: d, lift, trav };
 }
 
 export function visibleAt(a: Mover, t: number) {
@@ -68,6 +78,7 @@ export function sitAt(a: { actions: Action[] }, t: number) {
   const u = sm(cl((t - last.t0) / 0.5, 0, 1));
   return last.posture === "sit" ? u : 1 - u;
 }
+
 // props that can be switched on/off or opened/closed by the script; the value is the starting state
 export const DEFAULT_POWER: Partial<Record<PropKind, boolean>> = { tv: true, lamp: true, fan: true, curtains: true, phone: true };
 export function powerAt(p: { actions: Action[] }, t: number, def: boolean) {
@@ -90,6 +101,20 @@ export function lieAt(a: { actions: Action[] }, t: number) {
   return last.posture === "lie" ? u : 1 - u;
 }
 
+// light low-pass on the pose so clips blend into each other instead of snapping
+const smoothMem = new Map<string, { p: Pose; t: number; at: number }>();
+const SMOOTH: (keyof Pose)[] = ["aLU", "aLB", "aRU", "aRB", "lLU", "lLB", "lRU", "lRB", "yaw", "pitch", "tilt", "lean", "bob", "sit", "lie"];
+export function smoothPose(key: string, p: Pose, t: number): Pose {
+  const now = performance.now(), prev = smoothMem.get(key);
+  if (!prev || Math.abs(t - prev.t) > 0.3 || now - prev.at > 400) { smoothMem.set(key, { p: { ...p }, t, at: now }); return p; }
+  const dt = Math.min(0.1, Math.max(0, (now - prev.at) / 1000));
+  const k = 1 - Math.exp(-dt / 0.055);
+  const q: Pose = { ...p };
+  for (const f of SMOOTH) q[f] = prev.p[f] + (p[f] - prev.p[f]) * k;
+  smoothMem.set(key, { p: q, t, at: now });
+  return q;
+}
+
 function lookVec(s: Scene, look: string, from: number, t: number) {
   const z = { yaw: 0, pitch: 0, ex: 0, ey: 0 };
   if (look === "camera") return z;
@@ -103,6 +128,7 @@ function lookVec(s: Scene, look: string, from: number, t: number) {
   const dx = posAt(tg, t, s.props).x - from;
   return { yaw: cl(dx / 8, -38, 38), pitch: 0, ex: cl(dx / 120, -1, 1), ey: 0 };
 }
+
 // walking toward or away from the camera: feet lift in turn instead of swinging sideways
 export function depthWalkPose(p: Pose, t: number, run: boolean, holding: boolean): Pose {
   const w = Math.sin(t * (run ? 11 : 7));
@@ -124,7 +150,7 @@ export function actorState(s: Scene, a: Actor, t: number) {
   const say = act.find(q => q.say)?.say;
   const curAct = act.find(q => q.clip);
   const clip: ClipId = curAct?.clip ?? "idle";
-    const moving = pos.moving;
+  const moving = pos.moving;
 
   // which way is the character travelling? (X right, Z toward the camera, metres per second)
   const eps = 0.05, ta = Math.max(0, t - eps), tb = t + eps;
@@ -135,24 +161,36 @@ export function actorState(s: Scene, a: Actor, t: number) {
   const depthWalk = moving && speed > 1e-4 && Math.abs(mz) > Math.abs(mx) * 1.1;
 
   const gait: ClipId | null = clip === "run" ? "run" : moving || clip === "walk" ? "walk" : null;
-  let pose: Pose = { ...BASE, ...clips.idle(t) };
-  if (gait) pose = { ...pose, ...clips[gait](t) };
+  const idleP: Pose = { ...BASE, ...clips.idle(t) };
+  let pose: Pose = { ...idleP };
+  // the walk cycle follows the distance covered, so feet do not slide; legs settle as the character slows
+  const nominal = clip === "run" ? 2.0 : 0.87;
+  const gaitT = moving ? pos.trav / nominal : t;
+  if (gait) {
+    const g = clips[gait](gaitT);
+    const amp = moving ? cl(speed / (nominal * 0.7), 0, 1) : 1;
+    for (const k of Object.keys(g) as (keyof Pose)[]) pose[k] = lerp(idleP[k], g[k] as number, amp);
+  }
   if (clip !== "walk" && clip !== "run" && clip !== "idle") pose = { ...pose, ...clips[clip](clip === "kick" ? t - (curAct?.t0 ?? t) : t) };
 
-  // sitting
+  // sitting and lying
   const sit = moving ? 0 : sitAt(a, t);
   const lie = moving ? 0 : lieAt(a, t);
-  const seatRot = a.actions.filter(q => q.t0 <= t && q.posture === "sit").pop()?.rot ?? 0;
+  const seatRot = a.actions.filter(q => q.t0 <= t && (q.posture === "sit" || q.posture === "lie")).pop()?.rot ?? 0;
   if (lie > 0) pose.lie = lie;
   if (sit > 0) {
     pose.sit = sit;
     for (const k of ["lLU", "lRU", "lLB", "lRB"] as const) pose[k] = lerp(pose[k], 90, sit);
   }
 
-  // carrying something: both arms hold it in front
-  const holding = ai >= 0 && s.props.some(p => p.holds.some(h => h.by === ai && t >= h.t0 && t < h.t1));
+  // carrying something: both arms hold it in front (a phone is held in one hand)
+  const holdP = ai >= 0 ? s.props.find(p => p.holds.some(h => h.by === ai && t >= h.t0 && t < h.t1)) : undefined;
+  const holding = !!holdP;
+  const oneHand = holdP?.kind === "phone";
   const sideNow = moving || clip === "walk" || clip === "run";
-  if (holding) {
+  if (holding && oneHand) {
+    if (sideNow) { pose.aRU = 34; pose.aRB = 70; } else { pose.aRU = 30; pose.aRB = -70; }
+  } else if (holding) {
     if (sideNow) { pose.aLU = 52; pose.aRU = 52; pose.aLB = 65; pose.aRB = 65; }
     else { pose.aLU = 32; pose.aRU = 32; pose.aLB = -55; pose.aRB = -55; }
   }
@@ -193,13 +231,13 @@ export function actorState(s: Scene, a: Actor, t: number) {
   }
 
   const view: View = clip === "type" ? "front" : sideNow ? (depthWalk ? (mz > 0 ? "front" : "back") : "side") : viewA ?? "front";
-    // people who come in from, or leave toward, the camera fade in and out
+  // people who come in from, or leave toward, the camera fade in and out
   let alpha = 1;
   for (const q of a.actions) {
     if (q.enter && q.fromDepth !== undefined && q.fromDepth < 0 && t >= q.t0) alpha = Math.min(alpha, sm(cl((t - q.t0) / 0.5, 0, 1)));
     if (q.exit && (q.toDepth ?? 0) < 0 && t >= q.t0 && t < q.t1) alpha = Math.min(alpha, 1 - sm(cl((t - (q.t1 - 0.5)) / 0.5, 0, 1)));
   }
-  return { x: pos.x, depth: pos.depth, face, view, clip, expr, say, pose, lookEx, moving, holding, alpha, seatRot, heading, walking: sideNow, depthWalk };
+  return { x: pos.x, depth: pos.depth, face, view, clip, expr, say, pose, lookEx, moving, holding, alpha, seatRot, heading, walking: sideNow, depthWalk, gaitT, oneHand };
 }
 
 // where a prop is right now (it follows whoever is carrying it)
@@ -210,8 +248,8 @@ export function propPlace(s: Scene, p: SceneProp, t: number) {
     const pa = posAt(a, t, s.props);
     const sit = pa.moving ? 0 : sitAt(a, t);
     return {
-      x: pa.x + (pa.moving ? pa.face * a.def.height * 0.2 : 0), depth: pa.depth - 0.002,
-      lift: a.def.height * (0.4 - sit * 0.23), face: pa.face, moving: false, held: true, by: h.by, open: 0, power: 1,
+      x: pa.x + (pa.moving ? pa.face * a.def.height * 0.2 : p.kind === "phone" ? a.def.height * 0.08 : 0), depth: pa.depth - 0.002,
+      lift: a.def.height * (p.kind === "phone" ? (pa.moving ? 0.58 : 0.46) - sit * 0.2 : 0.4 - sit * 0.23), face: pa.face, moving: false, held: true, by: h.by, open: 0, power: 1,
     };
   }
   const pp = posAt(p, t, s.props);
@@ -234,7 +272,13 @@ export function camAt(s: Scene, t: number) {
   const u = b.t === a.t ? 1 : sm(cl((t - a.t) / (b.t - a.t), 0, 1));
   const fa = entity(s, a.follow), fb = entity(s, b.follow);
   const x = fb && fa === fb ? posAt(fb, t, s.props).x : lerp(a.x, fb ? posAt(fb, t, s.props).x : b.x, u);
-  return { x, y: lerp(a.y, b.y, u), zoom: lerp(a.zoom, b.zoom, u) };
+  const aa = a.az ?? 0, ba = b.az ?? 0;
+  let dAz = ((((ba - aa) % 360) + 540) % 360) - 180;
+  if (dAz <= -179.99) dAz = 180;
+  return {
+    x, y: lerp(a.y, b.y, u), zoom: Math.exp(lerp(Math.log(a.zoom), Math.log(b.zoom), u)),
+    az: aa + dAz * u, el: lerp(a.el ?? 3, b.el ?? 3, u),
+  };
 }
 
 // ---------------- backgrounds ----------------
@@ -403,6 +447,7 @@ export function drawBubble(c: CanvasRenderingContext2D, text: string, x: number,
   lines.forEach((l, k) => c.fillText(l, x, by + 11 + lh * (k + 0.5)));
   c.restore();
 }
+
 const withAlpha = (c: CanvasRenderingContext2D, a: number, f: () => void) => {
   if (a >= 0.999) { f(); return; }
   c.save(); c.globalAlpha = a; f(); c.restore();
@@ -440,21 +485,20 @@ export function renderFrame(c: CanvasRenderingContext2D, s: Scene, t: number, op
       items.push({ depth: pl.depth, order: 0, draw: () =>
         drawProp(c, p.kind, p.color, pl.x, FOOT - pl.depth * 70 - pl.lift * pers, sc, mirror, pl.x / 28, { open: pl.open, riders, power: pl.power, t }) });
     });
-    for (const a of s.actors) {
-        if (!visibleAt(a, t)) {
+    s.actors.forEach((a, ai) => {
+      if (!visibleAt(a, t)) {
         // someone talking from inside a car still gets a speech bubble above the car
         const st0 = actorState(s, a, t);
         if (st0.say && a.actions.some(q => q.ride !== undefined && t >= q.t0 && t < q.t1)) talkers.push({ x: st0.x, y: FOOT - st0.depth * 70 - 200, say: st0.say });
-        continue;
-            }
+        return;
+      }
       const st = actorState(s, a, t);
       const fy = FOOT - st.depth * 70, sc = 1 - st.depth * 0.22;
-      items.push({ depth: st.depth, order: 1, draw: () => withAlpha(c, st.alpha, () => drawActor(c, a.def, st.depthWalk ? depthWalkPose(st.pose, t, st.clip === "run", st.holding) : st.pose, st.expr, st.x, fy, sc,                                                                                          
-                                                                                                 
+      const pose = smoothPose("2d" + ai, st.depthWalk ? depthWalkPose(st.pose, st.gaitT, st.clip === "run", st.holding) : st.pose, t);
+      items.push({ depth: st.depth, order: 1, draw: () => withAlpha(c, st.alpha, () => drawActor(c, a.def, pose, st.expr, st.x, fy, sc,
         { view: st.view, face: st.face, seed: Math.floor(t * 8), prop: st.clip === "type" ? "laptop" : undefined })) });
-      
       if (st.say) talkers.push({ x: st.x, y: fy - a.def.height * sc * 1.02 - 10, say: st.say });
-    }
+    });
     items.sort((a, b) => b.depth - a.depth || a.order - b.order);
     for (const it of items) it.draw();
     if (opts.bubbles !== false) for (const q of talkers) drawBubble(c, q.say, q.x, q.y);
