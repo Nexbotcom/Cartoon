@@ -440,7 +440,7 @@ const standAt = (pi: number, fromX: number): { x: number; d: number } => {
         if (bi !== undefined) {
           t = leaveSeat(who, t);
           t = walkTo(who, pxp[bi], pdepthP[bi] - 0.002, t, false, [bi]);
-          me.actions.push({ t0: t, t1: t + 0.9, posture: "lie" });
+          me.actions.push({ t0: t, t1: t + 0.9, posture: "lie", rot: props[bi].rot ?? 0 }); notes.push(`${me.def.name} lies on ${props[bi].name} (from ${t.toFixed(1)}s)`);
           lyingOn[who] = true; lyingBed[who] = bi; t += 0.9; moveDone = true;
         } else warn(`${me.def.name} cannot lie down: there is no Bed on stage.`);
       } else if (SIT.test(l)) {
@@ -861,5 +861,5 @@ const standAt = (pi: number, fromX: number): { x: number; d: number } => {
   const total = Math.max(maxT, beatEnd) + 0.6;
   rideOpen.forEach(r => { if (r) r.t1 = total; });   // anyone still in a car stays there to the end
   cam.sort((a, b) => a.t - b.t);
-  return { duration: total, actors, props, cam, shots, warnings };
+  return { duration: total, actors, props, cam, shots, warnings, notes };
 }
