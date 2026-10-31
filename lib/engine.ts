@@ -455,10 +455,16 @@ const withAlpha = (c: CanvasRenderingContext2D, a: number, f: () => void) => {
 
 export function renderFrame(c: CanvasRenderingContext2D, s: Scene, t: number, opts: { bubbles?: boolean; theme?: ThemeId } = {}) {
   const cam = camAt(s, t);
+  // a vertical Short (taller than wide) shows the middle part of the world, drawn bigger
+  const cw = c.canvas.width, ch = c.canvas.height;
+  const k = ch > cw ? cw / 480 : cw / W;
+  c.save(); c.translate(cw / 2, ch / 2); c.scale(k, k); c.translate(-W / 2, -H / 2);
+  
   const th = THEMES[opts.theme ?? "day"];
   const g = c.createLinearGradient(0, 0, 0, H);
   th.sky.forEach((col, i) => g.addColorStop(i / (th.sky.length - 1), col));
-  c.fillStyle = g; c.fillRect(0, 0, W, H);
+  c.fillStyle = th.sky[0]; c.fillRect(-W, -H, 3 * W, 2 * H);
+  c.fillStyle = g; c.fillRect(-W, 0, 3 * W, H);
   if (th.stars) {
     c.fillStyle = "#fff";
     for (let k = 0; k < 70; k++) { const r = 1 + rnd(k, 3) * 1.6; c.globalAlpha = 0.5 + rnd(k, 4) * 0.5; c.fillRect(rnd(k, 1) * W, rnd(k, 2) * H * 0.6, r, r); }
@@ -504,4 +510,5 @@ export function renderFrame(c: CanvasRenderingContext2D, s: Scene, t: number, op
     if (opts.bubbles !== false) for (const q of talkers) drawBubble(c, q.say, q.x, q.y);
   });
   if (th.fg) layer(c, th.fg, cam);
+  c.restore();
 }
