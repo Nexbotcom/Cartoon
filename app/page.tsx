@@ -79,6 +79,7 @@ export default function Studio() {
   const [durations, setDurations] = useState<Record<string, number>>({});
   const [vs, setVs] = useState<VoiceStatus>(IDLE);
   const [alive, setAlive] = useState(true);
+  const [ratio, setRatio] = useState<"video" | "short">("video");
   const [hidden, setHidden] = useState<string[]>([]);
   const [editor, setEditor] = useState(false);
   const [selection, setSelection] = useState<Sel | null>(null);
@@ -144,7 +145,7 @@ export default function Studio() {
     const t = Math.min(timeRef.current, scene.duration);
     setT(t);
     paint(ctx(), scene, t);
-  }, [scene, bubbles, theme, mode, r3ready]);
+  }, [scene, bubbles, theme, mode, r3ready, ratio]);
   useEffect(() => { listChars().then(setLib); }, [tab]);
   useEffect(() => { setDraft({}); setDraftT0(null); }, [sel]);
   useEffect(() => { listVoices().then(r => { setVoices(r.voices); setVoiceNote(r.error ?? ""); }); }, []);
@@ -297,7 +298,7 @@ const exportVideo = async () => {
     rec.onstop = () => {
       const a = document.createElement("a");
       a.href = URL.createObjectURL(new Blob(chunks, { type: mime }));
-      a.download = `scene.${mime.includes("mp4") ? "mp4" : "webm"}`; a.click();
+      a.download = `${ratio === "short" ? "short" : "scene"}.${mime.includes("mp4") ? "mp4" : "webm"}`; a.click();
       setRecording(false);
     };
     setRecording(true);
@@ -519,8 +520,8 @@ const exportVideo = async () => {
       <main className="mx-auto grid max-w-6xl gap-4 p-3 lg:grid-cols-[1.4fr_1fr]">
         <section className="sticky top-0 z-20 -mx-3 space-y-2 bg-[#0b0d14]/95 px-3 pb-2 pt-1 backdrop-blur lg:top-3 lg:mx-0 lg:self-start lg:px-0">
           <div className="overflow-hidden rounded-2xl ring-1 ring-white/10" style={{ boxShadow: "0 20px 60px rgba(139,92,246,0.18)" }}>
-              <canvas ref={cv} width={W} height={H} className="block w-full bg-black"
-              style={{ touchAction: editor && mode === "3d" ? "none" : "auto" }} {...ed.handlers} />
+              <canvas ref={cv} width={ratio === "short" ? 720 : W} height={ratio === "short" ? 1280 : H} className="block w-full bg-black"
+            style={{ touchAction: editor && mode === "3d" ? "none" : "auto", ...(ratio === "short" ? { height: "56vh", width: "auto", margin: "0 auto" } : {}) }}
           </div>
           {mode === "3d" && !r3ready && <p className="text-xs text-slate-400">Loading 3D...</p>}
           {note3 && <p className="text-xs text-amber-400">{note3}</p>}
@@ -530,7 +531,13 @@ const exportVideo = async () => {
             <button onClick={() => void startPlay()} disabled={recording || working} style={grad}
               className="rounded-xl px-5 py-2 font-medium text-white disabled:opacity-50">▶ Play</button>
             <button onClick={() => { cancelVoices(); stop(); }} className="rounded-xl border border-white/10 bg-white/5 px-4 py-2">■ Stop</button>
+            
+              <div className="flex overflow-hidden rounded-xl border border-white/10 text-xs">
+              <button onClick={() => setRatio("video")} disabled={recording} className={`px-3 py-2 ${ratio === "video" ? "bg-violet-600 text-white" : "bg-white/5 text-slate-300"}`}>Video 16:9</button>
+              <button onClick={() => setRatio("short")} disabled={recording} className={`px-3 py-2 ${ratio === "short" ? "bg-violet-600 text-white" : "bg-white/5 text-slate-300"}`}>Short 9:16</button>
+            </div>
             <button onClick={() => void exportVideo()} disabled={recording || working}
+              
               className="rounded-xl bg-emerald-500 px-4 py-2 font-medium text-black disabled:opacity-50">
               {recording ? "Recording..." : "⬇ Export video"}
             </button>
