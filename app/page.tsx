@@ -520,8 +520,9 @@ const exportVideo = async () => {
       <main className="mx-auto grid max-w-6xl gap-4 p-3 lg:grid-cols-[1.4fr_1fr]">
         <section className="sticky top-0 z-20 -mx-3 space-y-2 bg-[#0b0d14]/95 px-3 pb-2 pt-1 backdrop-blur lg:top-3 lg:mx-0 lg:self-start lg:px-0">
           <div className="overflow-hidden rounded-2xl ring-1 ring-white/10" style={{ boxShadow: "0 20px 60px rgba(139,92,246,0.18)" }}>
+            
               <canvas ref={cv} width={ratio === "short" ? 720 : W} height={ratio === "short" ? 1280 : H} className="block w-full bg-black"
-            style={{ touchAction: editor && mode === "3d" ? "none" : "auto", ...(ratio === "short" ? { height: "56vh", width: "auto", margin: "0 auto" } : {}) }}
+            style={{ touchAction: editor && mode === "3d" ? "none" : "auto", ...(ratio === "short" ? { height: "56vh", width: "auto", margin: "0 auto" } : {}) }} {...ed.handlers} />
           </div>
           {mode === "3d" && !r3ready && <p className="text-xs text-slate-400">Loading 3D...</p>}
           {note3 && <p className="text-xs text-amber-400">{note3}</p>}
