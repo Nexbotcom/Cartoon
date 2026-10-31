@@ -580,7 +580,7 @@ export function createRenderer3D(): Renderer3D {
         const v = new THREE.Vector3(q.x, q.y, q.z).project(camera);
         
         if (v.z > -1 && v.z < 1) drawBubble(c, q.say, (v.x * 0.5 + 0.5) * RW, (-v.y * 0.5 + 0.5) * RH
-    
+    }
   }
   };
 
