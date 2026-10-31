@@ -457,7 +457,16 @@ export function createRenderer3D(): Renderer3D {
 
   // ---------- frame ----------
   let lastNow = performance.now(), lastT = 0;
+  let RW = W, RH = H;
   const render = (c: CanvasRenderingContext2D, s0: Scene, t: number, o: RenderOpts) => {
+        // follow the size of the picture: wide for a video, tall for a Short
+    const cw = c.canvas.width, ch = c.canvas.height;
+    if (cw !== RW || ch !== RH) {
+      RW = cw; RH = ch;
+      renderer.setSize(cw, ch, false);
+      camera.aspect = cw / ch; camera.fov = cw < ch ? 48 : 40; camera.updateProjectionMatrix();
+      edCam.aspect = cw / ch; edCam.updateProjectionMatrix();
+    }
     if (envTheme !== o.theme) applyEnv(o.theme);
     const e = env as Env;
     for (const [name, objs] of Object.entries(e.parts)) for (const ob of objs) ob.visible = !o.hidden.includes(name);
@@ -564,12 +573,12 @@ export function createRenderer3D(): Renderer3D {
       if (sky) sky.position.copy(camera.position);
       renderer.render(scene3, camera);
     }
-    c.drawImage(canvas, 0, 0, W, H);
+    c.drawImage(canvas, 0, 0, RW, RH);
 
     if (o.bubbles && !o.editor) {
       for (const q of talkers) {
         const v = new THREE.Vector3(q.x, q.y, q.z).project(camera);
-        if (v.z > -1 && v.z < 1) drawBubble(c, q.say, (v.x * 0.5 + 0.5) * W, (-v.y * 0.5 + 0.5) * H);
+        if (v.z > -1 && v.z < 1) drawBubble(c, q.say, (v.x * 0.5 + 0.5) * RW, (-v.y * 0.5 + 0.5) * RH;
       }
     }
   };
