@@ -320,7 +320,11 @@ export function createRenderer3D(): Renderer3D {
     const p = st.pose, clip = st.clip, side = st.walking || st.view === "side";
     const lie = p.lie;
     const seatA = (st.seatRot ?? 0) * D;            // direction of the chair or bed we are on
-    rig.root.position.set(toX(st.x) + lie * 0.9 * Math.cos(seatA), 0, toZ(st.depth) - lie * 0.9 * Math.sin(seatA));
+    rig.root.position.set(
+  toX(st.x),
+  0,
+  toZ(st.depth)
+);
 
     let target = 0;
     if (st.moving) target = st.heading;
