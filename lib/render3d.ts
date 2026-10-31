@@ -608,3 +608,4 @@ if (v.z > -1 && v.z < 1){ drawBubble(c, q.say, (v.x * 0.5 + 0.5) * RW, (-v.y * 0
     dispose() { k.dispose(scene3); renderer.dispose(); },
   };
 }
+}
