@@ -97,7 +97,7 @@ export function lieAt(a: { actions: Action[] }, t: number) {
     if (q.posture !== undefined) last = q;
   }
   if (!last || !any) return 0;
-  const u = sm(cl((t - last.t0) / 0.7, 0, 1));
+  const u = sm(cl((t - last.t0) / 0.9, 0, 1));
   return last.posture === "lie" ? u : 1 - u;
 }
 
@@ -178,7 +178,12 @@ export function actorState(s: Scene, a: Actor, t: number) {
   const lie = moving ? 0 : lieAt(a, t);
   const seatRot = a.actions.filter(q => q.t0 <= t && (q.posture === "sit" || q.posture === "lie")).pop()?.rot ?? 0;
   // a chair slides in under the table once someone has sat down, and out again before they stand up
-  const seatIdx = a.actions.filter(q => q.t0 <= t && q.posture === "sit").pop()?.seat;
+
+  const lastSit = a.actions.filter(q => q.t0 <= t && q.posture === "sit").pop();
+  const seatIdx = lastSit?.seat;
+  // while sitting down the body moves from where it stood onto the seat (and back again when it stands up)
+  const seatXp = lastSit?.sx !== undefined ? lerp(pos.x, lastSit.sx, sit) : pos.x;
+  const seatDp = lastSit?.sd !== undefined ? lerp(pos.depth, lastSit.sd, sit) : pos.depth;
   const slide = seatIdx !== undefined && s.props[seatIdx]?.kind === "chair" ? sm(cl((sit - 0.3) / 0.7, 0, 1)) : 0;
   if (lie > 0) pose.lie = lie;
   if (sit > 0) {
@@ -214,8 +219,10 @@ export function actorState(s: Scene, a: Actor, t: number) {
     const f = say ? near : talker;
     if (f) { faceHeading = Math.atan2(f[0], f[1]); fdx = f[0] * 150; }
   }
+  const turnAct = act.find(q => q.turn !== undefined);
+  if (turnAct && !moving) faceHeading = (turnAct.turn as number) * Math.PI / 180;
   let yaw = pose.yaw, pitch = pose.pitch, ex = 0, ey = 0, face = pos.face;
-
+  
   if (lookA) {
     const cur = lookVec(s, lookA.look as string, pos.x, t);
     const idx = done.indexOf(lookA);
@@ -258,7 +265,7 @@ export function actorState(s: Scene, a: Actor, t: number) {
     if (q.enter && q.fromDepth !== undefined && q.fromDepth < 0 && t >= q.t0) alpha = Math.min(alpha, sm(cl((t - q.t0) / 0.5, 0, 1)));
     if (q.exit && (q.toDepth ?? 0) < 0 && t >= q.t0 && t < q.t1) alpha = Math.min(alpha, 1 - sm(cl((t - (q.t1 - 0.5)) / 0.5, 0, 1)));
   }
-  return { x: pos.x, depth: pos.depth, face, view, clip, expr, say, pose, lookEx, moving, holding, alpha, seatRot, heading, walking: sideNow, depthWalk, gaitT, oneHand, faceHeading, faceYaw: faceHeading !== undefined && !lookA ? cl(fdx / 8, -38, 38) : 0, seatIdx, slide };
+  return { x: seatXp, depth: seatDp, face, view, clip, expr, say, pose, lookEx, moving, holding, alpha, seatRot, heading, walking: sideNow, depthWalk, gaitT, oneHand, faceHeading, faceYaw: faceHeading !== undefined && !lookA ? cl(fdx / 8, -38, 38) : 0, seatIdx, slide };
 }
 
 // where a prop is right now (it follows whoever is carrying it)
