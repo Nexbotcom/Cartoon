@@ -255,9 +255,11 @@ const standAt = (pi: number, fromX: number): { x: number; d: number } => {
       actors[who].actions.push({ t0: t, t1: t + 2.1, posture: "stand" });
       if (bi >= 0) {
         const o = stepOut(bi);
-        actors[who].actions.push({ t0: t + 0.5, t1: t + 1.1, clip: "walk", moveTo: o.x, toDepth: o.d });
+        
+        const far = Math.abs(o.x - px[who]) > 6 || Math.abs(o.d - pdepth[who]) > 0.01;
+        if (far) actors[who].actions.push({ t0: t + 2.1, t1: t + 2.65, clip: "walk", moveTo: o.x, toDepth: o.d });
         px[who] = o.x; pdepth[who] = o.d;
-        return t + 1.1;
+        return far ? t + 2.65 : t + 2.1;
       }
       return t + 0.8;
     }
@@ -449,9 +451,16 @@ const standAt = (pi: number, fromX: number): { x: number; d: number } => {
         }
         if (bi !== undefined) {
           t = leaveSeat(who, t);
-          t = walkTo(who, pxp[bi], pdepthP[bi] - 0.002, t, false, [bi]);
-          me.actions.push({ t0: t, t1: t + 0.9, posture: "lie", rot: props[bi].rot ?? 0 }); notes.push(`${me.def.name} lies on ${props[bi].name} (from ${t.toFixed(1)}s)`);
-          lyingOn[who] = true; lyingBed[who] = bi; t += 0.9; moveDone = true;
+          const ap = stepOut(bi);                    // stand beside the bed, sit on the edge, then lie back
+          t = walkTo(who, ap.x, ap.d, t, false, []);
+          me.actions.push({ t0: t, t1: t + 0.5, turn: props[bi].rot ?? 0 });
+          t += 0.5;
+          const hb = half(bi) ?? [1.05, 0.75];
+          const ed = localPt(bi, 0, Math.max(0.3, hb[1] - 0.32)), li = localPt(bi, 0, 0);
+          
+          me.actions.push({ t0: t, t1: t + 2.1, posture: "lie", rot: props[bi].rot ?? 0, sx: ed.x, sd: ed.d, lx: li.x, ld: li.d }); notes.push(`${me.def.name} lies on ${props[bi].name} (from ${t.toFixed(1)}s)`);
+          lyingOn[who] = true; lyingBed[who] = bi; t += 2.1; moveDone = true;
+          
         } else warn(`${me.def.name} cannot lie down: there is no Bed on stage.`);
       } else if (SIT.test(l)) {
         const seatWord = l.match(/\b(chairs?|sofas?|couch(?:es)?|benche?s?|seats?)\b/)?.[1];
