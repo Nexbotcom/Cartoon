@@ -508,6 +508,7 @@ export function createRenderer3D(): Renderer3D {
       const st = { ...st0, pose: smoothPose("3d" + i, st0.pose, t) };
       poseRig(rig, st, jump, dt);
       sits[i] = st.pose.sit;
+      if (st.seatIdx !== undefined) slides[st.seatIdx] = Math.max(slides[st.seatIdx] ?? 0, st.slide);
       if (st.say) talkers.push({ x: toX(st.x), y: 1.86 * rig.s, z: toZ(st.depth), say: st.say });
     });
 
@@ -534,7 +535,7 @@ export function createRenderer3D(): Renderer3D {
           holder.root.position.z + Math.cos(holder.angle) * 0.32 * holder.s);
         po.g.rotation.y = holder.angle;
       } else {
-        po.g.position.set(toX(pl.x), pl.lift / UNIT, toZ(pl.depth));
+        po.g.position.set(toX(pl.x) + Math.sin(rotY) * (slides[i] ?? 0) * 0.3, pl.lift / UNIT, toZ(pl.depth) + Math.cos(rotY) * (slides[i] ?? 0) * 0.3);
         const dir = (p.flip ? -1 : 1) * (p.kind === "car" ? pl.face : 1);
         po.g.rotation.y = p.kind === "car" ? (dir > 0 ? 0 : Math.PI) + rotY : (p.flip ? Math.PI : 0) + rotY;
       }
