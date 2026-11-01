@@ -471,11 +471,14 @@ const standAt = (pi: number, fromX: number): { x: number; d: number } => {
             t = leaveSeat(who, t);
             const slot = freeSlot(pi);
             const sp = seatPoint(pi, slot);
-            t = walkTo(who, sp.x, sp.d, t, run, [pi]);
-            me.actions.push({ t0: t, t1: t + 0.6, posture: "sit", rot: props[pi].rot ?? 0, seat: pi });
+            const ap = stepOut(pi);                  // stand in front of or beside the seat first, never walk through it
+            t = walkTo(who, ap.x, ap.d, t, run, []);
+            me.actions.push({ t0: t, t1: t + 0.5, turn: props[pi].rot ?? 0 });   // turn to face the way we will sit
+            t += 0.5;
+            me.actions.push({ t0: t, t1: t + 0.9, posture: "sit", rot: props[pi].rot ?? 0, seat: pi, sx: sp.x, sd: sp.d });
             (seatOcc[pi] ??= [])[slot] = who;
             seatedOn[who] = pi; seatSlot[who] = slot;
-            t += 0.6; moveDone = true;
+            t += 0.9; moveDone = true;
           }
         }
       }
