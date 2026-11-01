@@ -177,6 +177,9 @@ export function actorState(s: Scene, a: Actor, t: number) {
   const sit = moving ? 0 : sitAt(a, t);
   const lie = moving ? 0 : lieAt(a, t);
   const seatRot = a.actions.filter(q => q.t0 <= t && (q.posture === "sit" || q.posture === "lie")).pop()?.rot ?? 0;
+  // a chair slides in under the table once someone has sat down, and out again before they stand up
+  const seatIdx = a.actions.filter(q => q.t0 <= t && q.posture === "sit").pop()?.seat;
+  const slide = seatIdx !== undefined && s.props[seatIdx]?.kind === "chair" ? sm(cl((sit - 0.3) / 0.7, 0, 1)) : 0;
   if (lie > 0) pose.lie = lie;
   if (sit > 0) {
     pose.sit = sit;
@@ -194,8 +197,25 @@ export function actorState(s: Scene, a: Actor, t: number) {
     if (sideNow) { pose.aLU = 52; pose.aRU = 52; pose.aLB = 65; pose.aRB = 65; }
     else { pose.aLU = 32; pose.aRU = 32; pose.aLB = -55; pose.aRB = -55; }
   }
-
+    // turn to face the person we are talking to, or the one who is talking to us
+  let faceHeading: number | undefined, fdx = 0;
+  const lookedRecently = !!lookA && (t - lookA.t0 < 3 || lookA.look === "camera");
+  if (!moving && sit < 0.05 && lie < 0.05 && !lookedRecently) {
+    let nearD = 1e9, talkD = 1e9, near: number[] | undefined, talker: number[] | undefined;
+    for (let j = 0; j < s.actors.length; j++) {
+      const o = s.actors[j];
+      if (j === ai || !visibleAt(o, t) || o.actions.some(q => q.ride !== undefined && t >= q.t0 && t < q.t1)) continue;
+      const po = posAt(o, t, s.props);
+      const dx = (po.x - pos.x) / 150, dz = -(po.depth - pos.depth) * 8, dd = Math.hypot(dx, dz);
+      if (dd > 3.5 || dd < 0.05) continue;
+      if (dd < nearD) { nearD = dd; near = [dx, dz]; }
+      if (dd < talkD && o.actions.some(q => !!q.say && t >= q.t0 - 0.2 && t < q.t1 + 0.8)) { talkD = dd; talker = [dx, dz]; }
+    }
+    const f = say ? near : talker;
+    if (f) { faceHeading = Math.atan2(f[0], f[1]); fdx = f[0] * 150; }
+  }
   let yaw = pose.yaw, pitch = pose.pitch, ex = 0, ey = 0, face = pos.face;
+
   if (lookA) {
     const cur = lookVec(s, lookA.look as string, pos.x, t);
     const idx = done.indexOf(lookA);
@@ -206,6 +226,7 @@ export function actorState(s: Scene, a: Actor, t: number) {
     ex = lerp(prev.ex, cur.ex, w); ey = lerp(prev.ey, cur.ey, w);
     if (!moving && cur.ex !== 0 && cur.ey === 0) face = cur.ex > 0 ? 1 : -1;
   }
+  if (faceHeading !== undefined) face = fdx >= 0 ? 1 : -1;
   const lookEx = ex;
   for (const q of act) {
     const u = (t - q.t0) / Math.max(0.01, q.t1 - q.t0), env = Math.sin(Math.PI * cl(u, 0, 1));
