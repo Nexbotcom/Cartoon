@@ -244,7 +244,7 @@ const standAt = (pi: number, fromX: number): { x: number; d: number } => {
     const bi = lyingBed[who];
     if (lyingOn[who]) {
       lyingOn[who] = false; lyingBed[who] = -1;
-      actors[who].actions.push({ t0: t, t1: t + 0.8, posture: "stand" });
+      actors[who].actions.push({ t0: t, t1: t + 0.9, posture: "stand" });
       if (bi >= 0) {
         const o = stepOut(bi);
         actors[who].actions.push({ t0: t + 0.5, t1: t + 1.1, clip: "walk", moveTo: o.x, toDepth: o.d });
@@ -259,10 +259,12 @@ const standAt = (pi: number, fromX: number): { x: number; d: number } => {
     const occ = seatOcc[pi];
     if (occ && seatSlot[who] >= 0) occ[seatSlot[who]] = undefined;
     seatedOn[who] = undefined; seatSlot[who] = -1;
+
     const o = stepOut(pi);
-    actors[who].actions.push({ t0: t + 0.35, t1: t + 0.9, clip: "walk", moveTo: o.x, toDepth: o.d });
+    const far = Math.abs(o.x - px[who]) > 6 || Math.abs(o.d - pdepth[who]) > 0.01;
+    if (far) actors[who].actions.push({ t0: t + 0.9, t1: t + 1.45, clip: "walk", moveTo: o.x, toDepth: o.d });
     px[who] = o.x; pdepth[who] = o.d;
-    return t + 0.9;
+    return far ? t + 1.45 : t + 0.9;
   };
   const planLegs = (who: number, tx: number, td: number, run: boolean, ignore: number[]): Leg[] => {
     const pts = [...route(px[who], pdepth[who], tx, td, ignore), { x: tx, d: td }];
