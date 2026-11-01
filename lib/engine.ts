@@ -258,7 +258,7 @@ export function actorState(s: Scene, a: Actor, t: number) {
     if (q.enter && q.fromDepth !== undefined && q.fromDepth < 0 && t >= q.t0) alpha = Math.min(alpha, sm(cl((t - q.t0) / 0.5, 0, 1)));
     if (q.exit && (q.toDepth ?? 0) < 0 && t >= q.t0 && t < q.t1) alpha = Math.min(alpha, 1 - sm(cl((t - (q.t1 - 0.5)) / 0.5, 0, 1)));
   }
-  return { x: pos.x, depth: pos.depth, face, view, clip, expr, say, pose, lookEx, moving, holding, alpha, seatRot, heading, walking: sideNow, depthWalk, gaitT, oneHand };
+  return { x: pos.x, depth: pos.depth, face, view, clip, expr, say, pose, lookEx, moving, holding, alpha, seatRot, heading, walking: sideNow, depthWalk, gaitT, oneHand, faceHeading, faceYaw: faceHeading !== undefined && !lookA ? cl(fdx / 8, -38, 38) : 0, seatIdx, slide };
 }
 
 // where a prop is right now (it follows whoever is carrying it)
@@ -521,7 +521,8 @@ export function renderFrame(c: CanvasRenderingContext2D, s: Scene, t: number, op
       }
       const st = actorState(s, a, t);
       const fy = FOOT - st.depth * 70, sc = 1 - st.depth * 0.22;
-      const pose = smoothPose("2d" + ai, st.depthWalk ? depthWalkPose(st.pose, st.gaitT, st.clip === "run", st.holding) : st.pose, t);
+      const base = st.depthWalk ? depthWalkPose(st.pose, st.gaitT, st.clip === "run", st.holding) : st.pose;
+      const pose = smoothPose("2d" + ai, { ...base, yaw: base.yaw + st.faceYaw }, t);
       items.push({ depth: st.depth, order: 1, draw: () => withAlpha(c, st.alpha, () => drawActor(c, a.def, pose, st.expr, st.x, fy, sc,
         { view: st.view, face: st.face, seed: Math.floor(t * 8), prop: st.clip === "type" ? "laptop" : undefined })) });
       if (st.say) talkers.push({ x: st.x, y: fy - a.def.height * sc * 1.02 - 10, say: st.say });
