@@ -326,7 +326,9 @@ export function createRenderer3D(): Renderer3D {
     
     let target = 0;
     if (st.moving) target = st.heading;
-    else if (st.faceHeading !== undefined && p.sit < 0.05 && lie < 0.05) target = st.faceHeading;
+
+    else if (p.sit >= 0.05) target = seatA;
+    else if (st.faceHeading !== undefined && lie < 0.05) target = st.faceHeading;
     else if (side) target = st.face > 0 ? Math.PI / 2 : -Math.PI / 2;
     else if (st.view === "back") target = Math.PI;
     else target = cl(st.lookEx * 0.55, -0.55, 0.55);
