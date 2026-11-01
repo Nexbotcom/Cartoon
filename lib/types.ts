@@ -34,6 +34,7 @@ export interface Pose {
 
 export interface Action {
   t0: number; t1: number;
+  turn?: number; sx?: number; sd?: number;   // turn to face this direction; seat point to settle onto
   seat?: number;   // which prop (chair, sofa, bench) the character is sitting on
   clip?: ClipId; expr?: Expr; say?: string; moveTo?: number;
   look?: string; nod?: boolean; shake?: boolean; view?: View;
