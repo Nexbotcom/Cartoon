@@ -472,7 +472,7 @@ const standAt = (pi: number, fromX: number): { x: number; d: number } => {
             const slot = freeSlot(pi);
             const sp = seatPoint(pi, slot);
             t = walkTo(who, sp.x, sp.d, t, run, [pi]);
-            me.actions.push({ t0: t, t1: t + 0.6, posture: "sit", rot: props[pi].rot ?? 0 });
+            me.actions.push({ t0: t, t1: t + 0.6, posture: "sit", rot: props[pi].rot ?? 0, seat: pi });
             (seatOcc[pi] ??= [])[slot] = who;
             seatedOn[who] = pi; seatSlot[who] = slot;
             t += 0.6; moveDone = true;
