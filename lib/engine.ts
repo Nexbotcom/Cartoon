@@ -68,6 +68,18 @@ export function openAt(p: { actions: Action[] }, t: number) {
 }
 
 export function sitAt(a: { actions: Action[] }, t: number) {
+  let last: Action | undefined, prev: Action | undefined;
+  for (const q of a.actions) {
+    if (q.t0 > t || q.posture === undefined) continue;
+    prev = last; last = q;
+  }
+  if (!last) return 0;
+  const u = sm(cl((t - last.t0) / 0.9, 0, 1));
+  if (last.posture === "sit") return u;
+  return last.posture === "stand" && prev?.posture === "sit" ? 1 - u : 0;
+}
+function sitAtOld(a: { actions: Action[] }, t: number) {
+  
   let last: Action | undefined, anySit = false;
   for (const q of a.actions) {
     if (q.t0 > t) continue;
@@ -89,7 +101,23 @@ export function powerAt(p: { actions: Action[] }, t: number, def: boolean) {
   }
   return cur;
 }
-export function lieAt(a: { actions: Action[] }, t: number) {
+
+// getting onto a bed: sit on the edge first (edge), then swing the legs up and lie back (lie); getting up is the reverse
+export function bedAt(a: { actions: Action[] }, t: number) {
+  let last: Action | undefined, prev: Action | undefined;
+  for (const q of a.actions) {
+    if (q.t0 > t || q.posture === undefined) continue;
+    prev = last; last = q;
+  }
+  if (!last) return { lie: 0, edge: 0 };
+  const u = t - last.t0;
+  if (last.posture === "lie") return { lie: sm(cl((u - 0.9) / 1.2, 0, 1)), edge: u < 0.9 ? sm(cl(u / 0.9, 0, 1)) : 1 - sm(cl((u - 0.9) / 1.2, 0, 1)) };
+  if (last.posture === "stand" && prev?.posture === "lie") return { lie: 1 - sm(cl(u / 1.2, 0, 1)), edge: u < 1.2 ? sm(cl(u / 1.2, 0, 1)) : 1 - sm(cl((u - 1.2) / 0.9, 0, 1)) };
+  return { lie: 0, edge: 0 };
+}
+export function lieAt(a: { actions: Action[] }, t: number) { return bedAt(a, t).lie; }
+function lieAtOld(a: { actions: Action[] }, t: number) {
+  
   let last: Action | undefined, any = false;
   for (const q of a.actions) {
     if (q.t0 > t) continue;
@@ -174,8 +202,10 @@ export function actorState(s: Scene, a: Actor, t: number) {
   if (clip !== "walk" && clip !== "run" && clip !== "idle") pose = { ...pose, ...clips[clip](clip === "kick" ? t - (curAct?.t0 ?? t) : t) };
 
   // sitting and lying
-  const sit = moving ? 0 : sitAt(a, t);
-  const lie = moving ? 0 : lieAt(a, t);
+  const bed = moving ? { lie: 0, edge: 0 } : bedAt(a, t);
+  const chairSit = moving ? 0 : sitAt(a, t);
+  const sit = Math.max(chairSit, bed.edge);
+  const lie = bed.lie;
   const seatRot = a.actions.filter(q => q.t0 <= t && (q.posture === "sit" || q.posture === "lie")).pop()?.rot ?? 0;
   // a chair slides in under the table once someone has sat down, and out again before they stand up
 
