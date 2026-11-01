@@ -320,15 +320,18 @@ export function createRenderer3D(): Renderer3D {
     const p = st.pose, clip = st.clip, side = st.walking || st.view === "side";
     const lie = p.lie;
     const seatA = (st.seatRot ?? 0) * D;            // direction of the chair or bed we are on
-    rig.root.position.set(toX(st.x) + lie * 0.9 * Math.cos(seatA), 0, toZ(st.depth) - lie * 0.9 * Math.sin(seatA));
+    rig.root.position.set(
+    toX(st.x) + lie * 0.9 * Math.cos(seatA) + st.slide * 0.3 * Math.sin(seatA), 0,
+    toZ(st.depth) - lie * 0.9 * Math.sin(seatA) + st.slide * 0.3 * Math.cos(seatA));
     
     let target = 0;
     if (st.moving) target = st.heading;
+    else if (st.faceHeading !== undefined && p.sit < 0.05 && lie < 0.05) target = st.faceHeading;
     else if (side) target = st.face > 0 ? Math.PI / 2 : -Math.PI / 2;
     else if (st.view === "back") target = Math.PI;
     else target = cl(st.lookEx * 0.55, -0.55, 0.55);
     if (!rig.init || jump) { rig.angle = target; rig.init = true; }
-    else rig.angle += shortest(target - rig.angle) * (1 - Math.exp(-dt * 12));
+    else rig.angle += shortest(target - rig.angle) * (1 - Math.exp(-dt * 9));
     const faceA = aLerp(rig.angle, seatA, p.sit);
     rig.root.rotation.y = aLerp(faceA, seatA + Math.PI / 2, lie);
     // a little hip sway and shoulder twist while walking
@@ -490,6 +493,7 @@ export function createRenderer3D(): Renderer3D {
 
     const talkers: { x: number; y: number; z: number; say: string }[] = [];
     const sits: number[] = [];
+    const slides: number[] = [];
     s.actors.forEach((a, i) => {
       const rig = rigs[i];
       if (!rig) return;
