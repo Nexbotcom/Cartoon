@@ -210,6 +210,14 @@ const standAt = (pi: number, fromX: number): { x: number; d: number } => {
     }
     return (best ?? []).map(p => ({ x: Math.round(640 + p.X * 150), d: cl(-p.Z / 8, -0.9, 1.4) }));
   };
+
+    // a point on a prop, given in metres along it (lx) and out from its front (lz)
+  const localPt = (pi: number, lx: number, lz: number) => {
+    const r = rot(pi), cx = (pxp[pi] - 640) / 150, cz = -pdepthP[pi] * 8;
+    const X = cx + lx * Math.cos(r) + lz * Math.sin(r), Z = cz - lx * Math.sin(r) + lz * Math.cos(r);
+    return { x: Math.round(640 + X * 150), d: -Z / 8 };
+  };
+  // where a character steps to after getting up from a seat or a bed
   // where a character steps to after getting up from a seat or a bed
   const stepOut = (pi: number): { x: number; d: number } => {
     const h = half(pi) ?? [0.4, 0.4];
