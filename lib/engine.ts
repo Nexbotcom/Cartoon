@@ -67,28 +67,41 @@ export function openAt(p: { actions: Action[] }, t: number) {
   return o;
 }
 
-export function sitAt(a: { actions: Action[] }, t: number) {
+// ---------- sitting, lying and getting up (same pacing as the reference: sit, then the chair slides in) ----------
+const SEAT_T = 1.6, SLIDE_T = 1.1, LAY_T = 3.0, LAYUP_T = 2.4;
+export const SLIDE_M = 0.45;
+export interface Rest { act: Action; sw: number; slide: number; tw: number; pw: number; yw: number; lgw: number }
+export function restAt(a: { actions: Action[] }, t: number, isChair: (seat?: number) => boolean = () => false): Rest | null {
   let last: Action | undefined, prev: Action | undefined;
   for (const q of a.actions) {
     if (q.t0 > t || q.posture === undefined) continue;
     prev = last; last = q;
   }
-  if (!last) return 0;
-  const u = sm(cl((t - last.t0) / 0.9, 0, 1));
-  if (last.posture === "sit") return u;
-  return last.posture === "stand" && prev?.posture === "sit" ? 1 - u : 0;
-}
-function sitAtOld(a: { actions: Action[] }, t: number) {
-  
-  let last: Action | undefined, anySit = false;
-  for (const q of a.actions) {
-    if (q.t0 > t) continue;
-    if (q.posture === "sit") anySit = true;
-    if (q.posture !== undefined) last = q;
+  if (!last) return null;
+  const u = t - last.t0;
+  let act: Action | undefined, seatW = 0, slideW = 0, layW = 0;
+  if (last.posture === "sit") {
+    act = last; seatW = cl(u / SEAT_T, 0, 1);
+    if (isChair(last.seat)) slideW = cl((u - SEAT_T) / SLIDE_T, 0, 1);
+  } else if (last.posture === "lie") {
+    act = last; seatW = cl(u / SEAT_T, 0, 1); layW = cl((u - SEAT_T) / LAY_T, 0, 1);
+  } else if (last.posture === "stand" && prev && prev.posture === "sit") {
+    act = prev;
+    const chair = isChair(prev.seat);
+    slideW = chair ? 1 - cl(u / SLIDE_T, 0, 1) : 0;
+    seatW = 1 - cl((u - (chair ? SLIDE_T : 0)) / SEAT_T, 0, 1);
+  } else if (last.posture === "stand" && prev && prev.posture === "lie") {
+    act = prev; layW = 1 - cl(u / LAYUP_T, 0, 1); seatW = 1 - cl((u - LAYUP_T) / SEAT_T, 0, 1);
   }
-  if (!last || !anySit) return 0;
-  const u = sm(cl((t - last.t0) / 0.5, 0, 1));
-  return last.posture === "sit" ? u : 1 - u;
+  if (!act) return null;
+  if (last.posture === "stand" && seatW <= 0 && layW <= 0 && slideW <= 0) return null;
+  const ez = (x: number) => sm(cl(x, 0, 1));
+  return { act, sw: ez(seatW), slide: ez(slideW), tw: ez((layW - 0.1) / 0.9), pw: ez((layW - 0.15) / 0.8), yw: ez((layW - 0.25) / 0.6), lgw: ez(layW / 0.45) };
+}
+// how far down into a seat the body is (0 standing, 1 sitting); used by the 2D art and by held things
+export function sitAt(a: { actions: Action[] }, t: number) {
+  const r = restAt(a, t);
+  return r ? r.sw * (1 - r.tw) : 0;
 }
 
 // props that can be switched on/off or opened/closed by the script; the value is the starting state
@@ -101,34 +114,6 @@ export function powerAt(p: { actions: Action[] }, t: number, def: boolean) {
   }
   return cur;
 }
-
-// getting onto a bed: sit on the edge first (edge), then swing the legs up and lie back (lie); getting up is the reverse
-export function bedAt(a: { actions: Action[] }, t: number) {
-  let last: Action | undefined, prev: Action | undefined;
-  for (const q of a.actions) {
-    if (q.t0 > t || q.posture === undefined) continue;
-    prev = last; last = q;
-  }
-  if (!last) return { lie: 0, edge: 0 };
-  const u = t - last.t0;
-  if (last.posture === "lie") return { lie: sm(cl((u - 0.9) / 1.2, 0, 1)), edge: u < 0.9 ? sm(cl(u / 0.9, 0, 1)) : 1 - sm(cl((u - 0.9) / 1.2, 0, 1)) };
-  if (last.posture === "stand" && prev?.posture === "lie") return { lie: 1 - sm(cl(u / 1.2, 0, 1)), edge: u < 1.2 ? sm(cl(u / 1.2, 0, 1)) : 1 - sm(cl((u - 1.2) / 0.9, 0, 1)) };
-  return { lie: 0, edge: 0 };
-}
-export function lieAt(a: { actions: Action[] }, t: number) { return bedAt(a, t).lie; }
-function lieAtOld(a: { actions: Action[] }, t: number) {
-  
-  let last: Action | undefined, any = false;
-  for (const q of a.actions) {
-    if (q.t0 > t) continue;
-    if (q.posture === "lie") any = true;
-    if (q.posture !== undefined) last = q;
-  }
-  if (!last || !any) return 0;
-  const u = sm(cl((t - last.t0) / 0.9, 0, 1));
-  return last.posture === "lie" ? u : 1 - u;
-}
-
 // light low-pass on the pose so clips blend into each other instead of snapping
 const smoothMem = new Map<string, { p: Pose; t: number; at: number }>();
 const SMOOTH: (keyof Pose)[] = ["aLU", "aLB", "aRU", "aRB", "lLU", "lLB", "lRU", "lRB", "yaw", "pitch", "tilt", "lean", "bob", "sit", "lie"];
@@ -201,37 +186,38 @@ export function actorState(s: Scene, a: Actor, t: number) {
   }
   if (clip !== "walk" && clip !== "run" && clip !== "idle") pose = { ...pose, ...clips[clip](clip === "kick" ? t - (curAct?.t0 ?? t) : t) };
 
-  // sitting and lying
-  const bed = moving ? { lie: 0, edge: 0 } : bedAt(a, t);
-  const chairSit = moving ? 0 : sitAt(a, t);
-  const sit = Math.max(chairSit, bed.edge);
-  const lie = bed.lie;
-  const seatRot = a.actions.filter(q => q.t0 <= t && (q.posture === "sit" || q.posture === "lie")).pop()?.rot ?? 0;
-  // a chair slides in under the table once someone has sat down, and out again before they stand up
-
-  const lastSit = a.actions.filter(q => q.t0 <= t && q.posture === "sit").pop();
-  const seatIdx = lastSit?.seat;
-  // while sitting down the body moves from where it stood onto the seat (and back again when it stands up)
-  let seatXp = lastSit?.sx !== undefined ? lerp(pos.x, lastSit.sx, chairSit) : pos.x;
-  
-  let seatDp = lastSit?.sd !== undefined ? lerp(pos.depth, lastSit.sd, chairSit) : pos.depth;
-  const lastLie = a.actions.filter(q => q.t0 <= t && q.posture === "lie").pop();
-  if (!moving && lastLie?.sx !== undefined && lastLie.lx !== undefined && (bed.edge > 0 || bed.lie > 0)) {
-    const wA = 1 - bed.edge - bed.lie;           // beside the bed -> on the edge -> lying
-    seatXp = pos.x * wA + lastLie.sx * bed.edge + lastLie.lx * bed.lie;
-    seatDp = pos.depth * wA + (lastLie.sd ?? pos.depth) * bed.edge + (lastLie.ld ?? pos.depth) * bed.lie;
+  // sitting / lying: where the hips go, how high they are, how the legs bend (the 3D drawing uses these exact numbers)
+  const R = moving ? null : restAt(a, t, i => i !== undefined && s.props[i]?.kind === "chair");
+  const sit = R ? R.sw * (1 - R.tw) : 0;
+  const lie = R ? R.tw : 0;
+  const sc = a.def.height / 300;
+  const hs = sc * 0.88;                               // hip height when standing, in metres
+  let restX = pos.x, restD = pos.depth;
+  let rest: { hipY: number; thigh: number; tw: number; yaw: number; sw: number; slideM: number; seatIdx?: number } | undefined;
+  const seatRot = R?.act.rot ?? 0;
+  if (R) {
+    const A = R.act, lying = A.posture === "lie";
+    restX = lerp(pos.x, A.sx ?? pos.x, R.sw); restD = lerp(pos.depth, A.sd ?? pos.depth, R.sw);
+    let hy = lerp(hs, A.sh ?? hs, R.sw);
+    if (lying && A.lx !== undefined) {
+      restX = lerp(restX, A.lx, R.pw); restD = lerp(restD, A.ld ?? restD, R.pw);
+      hy = lerp(hy, A.lh ?? hy, R.tw);
+    }
+    const sa = ((A.rot ?? 0) * Math.PI) / 180;
+    const prop = A.seat !== undefined ? s.props[A.seat] : undefined;
+    const slideM = R.slide * SLIDE_M * (prop?.scale ?? 1);
+    if (slideM > 0) { restX += Math.sin(sa) * slideM * 150; restD -= (Math.cos(sa) * slideM) / 8; }
+    const hl = hy / sc;                                // hip height in the character's own units
+    const thigh = (hl < 0.88 ? Math.acos(cl((hl - 0.45) / 0.43, -1, 1)) : 0) * (1 - R.lgw);
+    rest = { hipY: hy, thigh, tw: R.tw, yaw: sa + (Math.PI / 2) * R.yw, sw: R.sw, slideM, seatIdx: A.seat };
   }
-
-
-  
-  const slide = seatIdx !== undefined && s.props[seatIdx]?.kind === "chair" ? sm(cl((chairSit - 0.3) / 0.7, 0, 1)) : 0;
   if (lie > 0) pose.lie = lie;
   if (sit > 0) {
     pose.sit = sit;
     for (const k of ["lLU", "lRU", "lLB", "lRB"] as const) pose[k] = lerp(pose[k], 90, sit);
   }
 
-  // carrying something: both arms hold it in front (a phone is held in one hand)
+  // carrying something: both arms hold it in front
   const holdP = ai >= 0 ? s.props.find(p => p.holds.some(h => h.by === ai && t >= h.t0 && t < h.t1)) : undefined;
   const holding = !!holdP;
   const oneHand = holdP?.kind === "phone";
@@ -242,7 +228,8 @@ export function actorState(s: Scene, a: Actor, t: number) {
     if (sideNow) { pose.aLU = 52; pose.aRU = 52; pose.aLB = 65; pose.aRB = 65; }
     else { pose.aLU = 32; pose.aRU = 32; pose.aLB = -55; pose.aRB = -55; }
   }
-    // turn to face the person we are talking to, or the one who is talking to us
+
+  // turn to face the person we are talking to, or the one who is talking to us
   let faceHeading: number | undefined, fdx = 0;
   const lookedRecently = !!lookA && (t - lookA.t0 < 3 || lookA.look === "camera");
   if (!moving && sit < 0.05 && lie < 0.05 && !lookedRecently) {
@@ -262,7 +249,6 @@ export function actorState(s: Scene, a: Actor, t: number) {
   const turnAct = act.find(q => q.turn !== undefined);
   if (turnAct && !moving) faceHeading = (turnAct.turn as number) * Math.PI / 180;
   let yaw = pose.yaw, pitch = pose.pitch, ex = 0, ey = 0, face = pos.face;
-  
   if (lookA) {
     const cur = lookVec(s, lookA.look as string, pos.x, t);
     const idx = done.indexOf(lookA);
@@ -305,7 +291,9 @@ export function actorState(s: Scene, a: Actor, t: number) {
     if (q.enter && q.fromDepth !== undefined && q.fromDepth < 0 && t >= q.t0) alpha = Math.min(alpha, sm(cl((t - q.t0) / 0.5, 0, 1)));
     if (q.exit && (q.toDepth ?? 0) < 0 && t >= q.t0 && t < q.t1) alpha = Math.min(alpha, 1 - sm(cl((t - (q.t1 - 0.5)) / 0.5, 0, 1)));
   }
-  return { x: seatXp, depth: seatDp, face, view, clip, expr, say, pose, lookEx, moving, holding, alpha, seatRot, heading, walking: sideNow, depthWalk, gaitT, oneHand, faceHeading, faceYaw: faceHeading !== undefined && !lookA ? cl(fdx / 8, -38, 38) : 0, seatIdx, slide };
+  return { x: restX, depth: restD, face, view, clip, expr, say, pose, lookEx, moving, holding, alpha, seatRot, heading, walking: sideNow, depthWalk, gaitT, oneHand,
+    faceHeading, faceYaw: faceHeading !== undefined && !lookA ? cl(fdx / 8, -38, 38) : 0, rest,
+    slide: 0, seatIdx: undefined as number | undefined };   // kept so an older render3d.ts still builds
 }
 
 // where a prop is right now (it follows whoever is carrying it)
@@ -527,7 +515,6 @@ export function renderFrame(c: CanvasRenderingContext2D, s: Scene, t: number, op
   const cw = c.canvas.width, ch = c.canvas.height;
   const k = ch > cw ? cw / 480 : cw / W;
   c.save(); c.translate(cw / 2, ch / 2); c.scale(k, k); c.translate(-W / 2, -H / 2);
-  
   const th = THEMES[opts.theme ?? "day"];
   const g = c.createLinearGradient(0, 0, 0, H);
   th.sky.forEach((col, i) => g.addColorStop(i / (th.sky.length - 1), col));
@@ -535,7 +522,7 @@ export function renderFrame(c: CanvasRenderingContext2D, s: Scene, t: number, op
   c.fillStyle = g; c.fillRect(-W, 0, 3 * W, H);
   if (th.stars) {
     c.fillStyle = "#fff";
-    for (let k = 0; k < 70; k++) { const r = 1 + rnd(k, 3) * 1.6; c.globalAlpha = 0.5 + rnd(k, 4) * 0.5; c.fillRect(rnd(k, 1) * W, rnd(k, 2) * H * 0.6, r, r); }
+    for (let n = 0; n < 70; n++) { const r = 1 + rnd(n, 3) * 1.6; c.globalAlpha = 0.5 + rnd(n, 4) * 0.5; c.fillRect(rnd(n, 1) * W, rnd(n, 2) * H * 0.6, r, r); }
     c.globalAlpha = 1;
   }
   if (th.sun) {
