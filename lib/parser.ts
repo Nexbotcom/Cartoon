@@ -252,7 +252,7 @@ const standAt = (pi: number, fromX: number): { x: number; d: number } => {
     const bi = lyingBed[who];
     if (lyingOn[who]) {
       lyingOn[who] = false; lyingBed[who] = -1;
-      actors[who].actions.push({ t0: t, t1: t + 0.9, posture: "stand" });
+      actors[who].actions.push({ t0: t, t1: t + 2.1, posture: "stand" });
       if (bi >= 0) {
         const o = stepOut(bi);
         actors[who].actions.push({ t0: t + 0.5, t1: t + 1.1, clip: "walk", moveTo: o.x, toDepth: o.d });
@@ -263,7 +263,7 @@ const standAt = (pi: number, fromX: number): { x: number; d: number } => {
     }
     const pi = seatedOn[who];
     if (pi === undefined) return t;
-    actors[who].actions.push({ t0: t, t1: t + 0.7, posture: "stand" });
+    actors[who].actions.push({ t0: t, t1: t + 0.9, posture: "stand" });
     const occ = seatOcc[pi];
     if (occ && seatSlot[who] >= 0) occ[seatSlot[who]] = undefined;
     seatedOn[who] = undefined; seatSlot[who] = -1;
