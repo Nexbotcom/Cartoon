@@ -212,9 +212,19 @@ export function actorState(s: Scene, a: Actor, t: number) {
   const lastSit = a.actions.filter(q => q.t0 <= t && q.posture === "sit").pop();
   const seatIdx = lastSit?.seat;
   // while sitting down the body moves from where it stood onto the seat (and back again when it stands up)
-  const seatXp = lastSit?.sx !== undefined ? lerp(pos.x, lastSit.sx, sit) : pos.x;
-  const seatDp = lastSit?.sd !== undefined ? lerp(pos.depth, lastSit.sd, sit) : pos.depth;
-  const slide = seatIdx !== undefined && s.props[seatIdx]?.kind === "chair" ? sm(cl((sit - 0.3) / 0.7, 0, 1)) : 0;
+  let seatXp = lastSit?.sx !== undefined ? lerp(pos.x, lastSit.sx, chairSit) : pos.x;
+  
+  let seatDp = lastSit?.sd !== undefined ? lerp(pos.depth, lastSit.sd, chairSit) : pos.depth;
+  const lastLie = a.actions.filter(q => q.t0 <= t && q.posture === "lie").pop();
+  if (!moving && lastLie?.sx !== undefined && lastLie.lx !== undefined && (bed.edge > 0 || bed.lie > 0)) {
+    const wA = 1 - bed.edge - bed.lie;           // beside the bed -> on the edge -> lying
+    seatXp = pos.x * wA + lastLie.sx * bed.edge + lastLie.lx * bed.lie;
+    seatDp = pos.depth * wA + (lastLie.sd ?? pos.depth) * bed.edge + (lastLie.ld ?? pos.depth) * bed.lie;
+  }
+
+
+  
+  const slide = seatIdx !== undefined && s.props[seatIdx]?.kind === "chair" ? sm(cl((chairSit - 0.3) / 0.7, 0, 1)) : 0;
   if (lie > 0) pose.lie = lie;
   if (sit > 0) {
     pose.sit = sit;
