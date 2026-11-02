@@ -98,8 +98,156 @@ export function createRenderer3D(): Renderer3D {
   const k = makeKit();
   const { toon, bx, cyl, sph, mesh, limb } = k;
 
+
+
+
+
+
+
+
+
+
+
+
+
+  
   // ---------- characters ----------
+    // ---------- the new body: tapered limbs, pelvis, neck, hands with joints, feet with toes, bigger heads for small people ----------
+  const buildCharacterV2 = (def: CharacterDef): Rig => {
+    const b = def.build ?? 1;
+    const ab = Math.min(1.15, 0.85 + 0.15 * b);              // arms and legs get a little thicker, but less than the chest
+    const hs = 1 + cl((300 - def.height) / 300, 0, 0.4);     // smaller people have bigger heads
+    const skin = def.skin, top = def.top, bot = def.bottom;
+    const root = new THREE.Group(), body = new THREE.Group();
+    root.add(body);
+    const hipY = 0.88;
+    const taper = (g: THREE.Object3D, rt: number, rb: number, len: number, col: string) => {
+      const geo = new THREE.CylinderGeometry(rt, rb, len, 14);
+      geo.translate(0, -len / 2, 0);
+      return mesh(g, geo, toon(col), 0, 0, 0);
+    };
+
+    // legs: thigh, knee, shin, shoe with a rounded toe (the feet end 0.45 below the knee, as the sitting maths expects)
+    const mkLeg = (sgn: number) => {
+      const lg = new THREE.Group(); lg.position.set(sgn * 0.095 * b, hipY, 0); body.add(lg);
+      const bare = def.outfit !== "pants";
+      const thighCol = def.outfit === "skirt" ? skin : bot;
+      taper(lg, 0.078 * ab, 0.058 * ab, 0.44, thighCol);
+      const kn = new THREE.Group(); kn.position.y = -0.44; lg.add(kn);
+      sph(kn, 0.058 * ab, thighCol, 0, 0, 0);
+      taper(kn, 0.056 * ab, 0.04 * ab, 0.4, bare ? skin : bot);
+      bx(kn, 0.1 * ab, 0.075, 0.19, def.shoes, 0, -0.4125, 0.045);
+      sph(kn, 0.05, def.shoes, 0, -0.4125, 0.125, 1, 0.75, 1.1);
+      return { lg, kn };
+    };
+    const L = mkLeg(-1), R = mkLeg(1);
+
+    // pelvis, belt and a chest that is wider at the shoulders
+    const pel = mesh(body, new THREE.CylinderGeometry(0.17, 0.16, 0.2, 18), toon(bot), 0, hipY, 0); pel.scale.set(b, 1, 0.72);
+    const belt = mesh(body, new THREE.CylinderGeometry(0.168, 0.168, 0.035, 18), toon("#241a12"), 0, hipY + 0.085, 0); belt.scale.set(b, 1, 0.72);
+    const torso = new THREE.Group(); torso.position.y = hipY; body.add(torso);
+    const tg = new THREE.CylinderGeometry(0.195, 0.165, 0.46, 20); tg.translate(0, 0.23, 0);
+    const chest = mesh(torso, tg, toon(top), 0, 0.08, 0); chest.scale.set(b, 1, 0.62);
+    if (def.outfit === "skirt") {
+      const sk = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.19 * b, 0.34 * b, 0.34, 24, 1, true),
+        new THREE.MeshToonMaterial({ color: new THREE.Color(bot), gradientMap: k.gm, side: THREE.DoubleSide }));
+      sk.position.y = -0.1; sk.castShadow = true; torso.add(sk);
+    }
+
+    // arms: shoulder, upper arm, elbow, forearm, wrist, palm, four fingers with three joints each, thumb with two
+    const mkArm = (sgn: number) => {
+      const sh = new THREE.Group(); sh.position.set(sgn * 0.23 * b, 0.49, 0); torso.add(sh);
+      sph(sh, 0.062, top, 0, 0, 0);
+      taper(sh, 0.045 * ab, 0.038 * ab, 0.29, skin);
+      const el = new THREE.Group(); el.position.y = -0.29; sh.add(el);
+      sph(el, 0.04 * ab, skin, 0, 0, 0);
+      taper(el, 0.037 * ab, 0.028 * ab, 0.27, skin);
+      if (def.sleeve === "long") { taper(sh, 0.052 * ab, 0.046 * ab, 0.29, top); taper(el, 0.044 * ab, 0.038 * ab, 0.2, top); }
+      else taper(sh, 0.058 * ab, 0.054 * ab, 0.15, top);
+      const hg = new THREE.Group(); hg.position.y = -0.27; el.add(hg);
+      sph(hg, 0.03, skin, 0, 0, 0);
+      sph(hg, 0.042, skin, 0, -0.04, 0, 1, 1.1, 0.55);
+      const fingers = [-0.022, -0.0075, 0.0075, 0.022].map((fx, i) => {
+        const len = [0.034, 0.04, 0.038, 0.03][i];
+        const j1 = new THREE.Group(); j1.position.set(fx, -0.08, 0); hg.add(j1);
+        taper(j1, 0.0105, 0.0095, len, skin); sph(j1, 0.0095, skin, 0, -len, 0);
+        const j2 = new THREE.Group(); j2.position.y = -len; j2.rotation.z = -sgn * 0.22; j1.add(j2);
+        taper(j2, 0.0092, 0.0085, len * 0.75, skin); sph(j2, 0.0085, skin, 0, -len * 0.75, 0);
+        const j3 = new THREE.Group(); j3.position.y = -len * 0.75; j3.rotation.z = -sgn * 0.18; j2.add(j3);
+        taper(j3, 0.0085, 0.0075, len * 0.55, skin); sph(j3, 0.0075, skin, 0, -len * 0.55, 0);
+        return j1;
+      });
+      const thumb = new THREE.Group(); thumb.position.set(-sgn * 0.036, -0.03, 0.008); hg.add(thumb);
+      taper(thumb, 0.0125, 0.011, 0.034, skin); sph(thumb, 0.011, skin, 0, -0.034, 0);
+      const t2 = new THREE.Group(); t2.position.y = -0.034; t2.rotation.z = -sgn * 0.2; thumb.add(t2);
+      taper(t2, 0.0105, 0.009, 0.03, skin); sph(t2, 0.009, skin, 0, -0.03, 0);
+      return { sh, el, hand: { g: hg, fingers, thumb } as HandRig };
+    };
+    const AL = mkArm(-1), AR = mkArm(1);
+
+    // neck and head (a taller, narrower egg with ears; the face is placed on it exactly as before)
+    const neck = new THREE.Group(); neck.position.y = 0.56; torso.add(neck);
+    cyl(neck, 0.047, 0.055, 0.1, skin, 0, 0.02, 0);
+    const head = new THREE.Group(); head.position.y = 0.14 + (hs - 1) * 0.06; head.scale.setScalar(hs); neck.add(head);
+    sph(head, 1, skin, 0, 0, 0, 0.105, 0.138, 0.12);
+    sph(head, 0.028, skin, -0.1, -0.005, 0, 0.6, 1, 1);
+    sph(head, 0.028, skin, 0.1, -0.005, 0, 0.6, 1, 1);
+
+    if (def.hairStyle !== "none") {
+      const hm = toon(def.hair);
+      const cap = mesh(head, new THREE.SphereGeometry(0.122, 28, 18, 0, TAU, 0, 1.1), hm, 0, 0.012, -0.004);
+      const back = mesh(head, new THREE.SphereGeometry(0.123, 28, 18, Math.PI, Math.PI, 0, def.hairStyle === "long" ? 2.5 : 1.95), hm, 0, 0, -0.004);
+      cap.scale.set(0.9, 1.18, 1.03); back.scale.set(0.9, 1.18, 1.03);
+      if (def.hairStyle === "spiky") {
+        const cg = new THREE.ConeGeometry(0.04, 0.11, 6);
+        for (let i = 0; i < 7; i++) {
+          const th = i === 0 ? 0 : 0.75, ph = ((i - 1) / 6) * TAU;
+          const dir = new THREE.Vector3(Math.sin(th) * Math.cos(ph), Math.cos(th), Math.sin(th) * Math.sin(ph)).normalize();
+          const cn = mesh(head, cg, hm, dir.x * 0.112, dir.y * 0.15 + 0.01, dir.z * 0.13);
+          cn.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+        }
+      }
+      if (def.hairStyle === "bun") sph(head, 0.058, def.hair, 0, 0.16, -0.05);
+      if (def.hairStyle === "long") mesh(head, new THREE.CapsuleGeometry(0.09, 0.2, 4, 10), hm, 0, -0.12, -0.075).scale.set(1.3, 1, 0.6);
+    }
+
+    const eyes = [-1, 1].map(s => {
+      const g = new THREE.Group(); g.position.set(s * 0.043, 0.018, 0.1); head.add(g);
+      sph(g, 0.027, "#ffffff", 0, 0, 0, 1, 1.1, 0.5);
+      const pup = new THREE.Group(); g.add(pup);
+      sph(pup, 0.017, def.eye ?? "#3b2a1e", 0, 0, 0.008, 1, 1, 0.5);
+      sph(pup, 0.009, "#14101c", 0, 0, 0.014, 1, 1, 0.5);
+      return { g, pup };
+    });
+    const browCol = def.hairStyle === "none" ? "#3a2a20" : dk(def.hair, 0.8);
+    const brows = [-1, 1].map(s => bx(head, 0.045, 0.009, 0.008, browCol, s * 0.043, 0.052, 0.104));
+    sph(head, 0.018, dk(skin, 0.9), 0, -0.018, 0.12, 1, 0.9, 1);
+
+    const mFlat = mesh(head, new THREE.BoxGeometry(0.05, 0.006, 0.006), toon("#5a2a2a"), 0, -0.052, 0.107);
+    const mSmile = mesh(head, new THREE.TorusGeometry(0.028, 0.0045, 6, 18, Math.PI), toon("#5a2a2a"), 0, -0.034, 0.107);
+    mSmile.rotation.z = Math.PI;
+    const mFrown = mesh(head, new THREE.TorusGeometry(0.026, 0.0045, 6, 18, Math.PI), toon("#5a2a2a"), 0, -0.078, 0.107);
+    const mOpen = sph(head, 0.022, "#5a1f2a", 0, -0.058, 0.1, 1, 0.5, 0.5);
+
+    const laptop = new THREE.Group(); laptop.visible = false; root.add(laptop);
+    bx(laptop, 1.0, 0.05, 0.6, "#8a6a4a", 0, 0.72, 0.55);
+    for (const [lx, lz] of [[-0.45, 0.3], [0.45, 0.3], [-0.45, 0.8], [0.45, 0.8]]) bx(laptop, 0.05, 0.72, 0.05, "#6e5238", lx, 0.36, lz);
+    bx(laptop, 0.46, 0.02, 0.32, "#c9ccd3", 0, 0.755, 0.55);
+    bx(laptop, 0.46, 0.3, 0.016, "#2b2f3a", 0, 0.9, 0.42).rotation.x = -0.18;
+
+    return {
+      sig: "", root, body, torso, neck,
+      armL: AL.sh, elL: AL.el, armR: AR.sh, elR: AR.el,
+      legL: L.lg, knL: L.kn, legR: R.lg, knR: R.kn,
+      eyes, brows, mFlat, mSmile, mFrown, mOpen, laptop,
+      angle: 0, init: false, s: def.height / 300, handL: AL.hand, handR: AR.hand,
+    };
+  };
   const buildCharacter = (def: CharacterDef): Rig => {
+
+
+    
     const b = def.build ?? 1;
     const skin = def.skin, top = def.top, bot = def.bottom;
     const root = new THREE.Group(), body = new THREE.Group();
