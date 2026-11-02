@@ -463,6 +463,64 @@ export function createRenderer3D(): Renderer3D {
     propObjs.length = s.props.length;
   };
 
+
+    // ---------- cartoon extras: smooth expressions, and skirts / long hair / buns that lag behind and swing ----------
+  const faceMem = new WeakMap<Rig, { happy: number; sad: number; angry: number; surprised: number }>();
+  const faceState = (rig: Rig, expr: string, dt: number) => {
+    let f = faceMem.get(rig);
+    if (!f) { f = { happy: 0, sad: 0, angry: 0, surprised: 0 }; faceMem.set(rig, f); }
+    const kk = 1 - Math.exp(-dt * 9);
+    f.happy += ((expr === "happy" ? 1 : 0) - f.happy) * kk;
+    f.sad += ((expr === "sad" ? 1 : 0) - f.sad) * kk;
+    f.angry += ((expr === "angry" ? 1 : 0) - f.angry) * kk;
+    f.surprised += ((expr === "surprised" ? 1 : 0) - f.surprised) * kk;
+    return f;
+  };
+  interface Swing { sk?: THREE.Mesh; hair?: THREE.Mesh; bun?: THREE.Mesh; px: number; pz: number; yaw: number; bob: number; a: number; av: number; b: number; bv: number; c: number; cv: number }
+  const swingMem = new WeakMap<Rig, Swing>();
+  const follow = (rig: Rig, st: ReturnType<typeof actorState>, dt: number) => {
+    let m = swingMem.get(rig);
+    if (!m) {
+      const mm: Swing = { px: rig.root.position.x, pz: rig.root.position.z, yaw: rig.root.rotation.y, bob: st.pose.bob, a: 0, av: 0, b: 0, bv: 0, c: 0, cv: 0 };
+      const head = rig.neck.children.find(ch => ch.type === "Group");
+      rig.torso.children.forEach(ch => {
+        const g = (ch as THREE.Mesh).geometry as THREE.CylinderGeometry | undefined;
+        if (g && g.type === "CylinderGeometry" && g.parameters.openEnded) mm.sk = ch as THREE.Mesh;   // the skirt is the open-ended cylinder
+      });
+      head?.children.forEach(ch => {
+        const g = (ch as THREE.Mesh).geometry as THREE.BufferGeometry | undefined;
+        if (!g) return;
+        if (g.type === "CapsuleGeometry") mm.hair = ch as THREE.Mesh;
+        if (g.type === "SphereGeometry" && (g as THREE.SphereGeometry).parameters.radius === 0.058) mm.bun = ch as THREE.Mesh;
+      });
+      if (mm.sk) { mm.sk.geometry.translate(0, -0.17, 0); mm.sk.position.y = 0.07; }        // swing from the waist
+      if (mm.hair) { mm.hair.geometry.translate(0, -0.19, 0); mm.hair.position.y = 0.07; }  // swing from the back of the head
+      swingMem.set(rig, mm);
+      m = mm;
+    }
+    if (!m.sk && !m.hair && !m.bun) return;
+    const d = cl(dt, 0.001, 0.05);
+    const yaw = rig.root.rotation.y;
+    const vx = (rig.root.position.x - m.px) / d, vz = (rig.root.position.z - m.pz) / d;
+    const vf = cl(vx * Math.sin(yaw) + vz * Math.cos(yaw), -3, 3);      // speed along the way it faces
+    const vl = cl(vx * Math.cos(yaw) - vz * Math.sin(yaw), -3, 3);      // sideways speed
+    const yr = cl(shortest(yaw - m.yaw) / d, -8, 8);                    // how fast it is turning
+    const vy = cl(-(st.pose.bob - m.bob) * 0.0058 / d, -4, 4);          // up / down speed
+    m.px = rig.root.position.x; m.pz = rig.root.position.z; m.yaw = yaw; m.bob = st.pose.bob;
+    const ta = cl(vf * 0.14 - vy * 0.04, -0.4, 0.4), tb = cl(-vl * 0.12 - yr * 0.04, -0.4, 0.4), tc = cl(vy * 0.012, -0.03, 0.03);
+    m.av += (-(m.a - ta) * 90 - m.av * 9.5) * d; m.a += m.av * d;       // springs that overshoot a little, like cartoon cloth
+    m.bv += (-(m.b - tb) * 90 - m.bv * 9.5) * d; m.b += m.bv * d;
+    m.cv += (-(m.c - tc) * 160 - m.cv * 11) * d; m.c += m.cv * d;
+    if (m.sk) {
+      const fl = 1 + 0.07 * Math.min(1, Math.abs(vf) / 1.5) + Math.abs(m.b) * 0.1;
+      m.sk.rotation.set(m.a * 0.7, 0, m.b * 0.7); m.sk.scale.set(fl, 1, fl);
+    }
+    if (m.hair) m.hair.rotation.set(m.a, 0, m.b);
+    if (m.bun) m.bun.position.y = 0.16 - m.c;
+  };
+
+  // ---------- posing ----------
+
   // ---------- posing ----------
   const poseRig = (rig: Rig, st: ReturnType<typeof actorState>, jump: boolean, dt: number) => {
     const p = st.pose, clip = st.clip, side = st.walking || st.view === "side";
@@ -565,16 +623,19 @@ export function createRenderer3D(): Renderer3D {
     rig.mSmile.visible = !talking && st.expr === "happy";
     rig.mFrown.visible = !talking && (st.expr === "sad" || st.expr === "angry");
     rig.mFlat.visible = !talking && !rig.mSmile.visible && !rig.mFrown.visible;
+    const fw = faceState(rig, st.expr, dt);                 // expressions fade in and out instead of snapping
     rig.brows.forEach((br, i) => {
       const s = i === 0 ? -1 : 1;
-      br.rotation.z = st.expr === "angry" ? s * 0.35 : st.expr === "sad" ? -s * 0.35 : 0;
-      br.position.y = st.expr === "surprised" ? 0.066 : st.expr === "sad" ? 0.056 : st.expr === "happy" ? 0.058 : 0.052;
+      br.rotation.z = s * (0.4 * fw.angry - 0.4 * fw.sad); br.scale.set(1.15, 1.5, 1);
+      br.position.y = 0.052 + 0.016 * fw.surprised + 0.006 * fw.happy + 0.004 * fw.sad - 0.004 * fw.angry;
     });
     rig.eyes.forEach(e => {
-      e.g.scale.y = st.expr === "happy" ? 0.18 : Math.max(0.08, 1 - p.blink);
+      e.g.scale.set(1.15 + 0.15 * fw.surprised, Math.max(0.08, (1 - 0.82 * fw.happy - 0.2 * fw.angry - 0.15 * fw.sad) * (1 + 0.25 * fw.surprised) * (1 - p.blink)), 1);
       e.pup.position.set(p.eyeX * 0.009, -p.eyeY * 0.007, 0);
+      e.pup.scale.setScalar(1 + 0.18 * fw.happy - 0.25 * fw.surprised);
     });
     rig.laptop.visible = clip === "type";
+    follow(rig, st, dt);
   };
 
   // ---------- director camera: angle, zoom up to 10x, and steady 360 orbits ----------
