@@ -494,6 +494,22 @@ export function createRenderer3D(): Renderer3D {
     rig.body.rotation.set(-lieA, -0.05 * sw, 0.015 * sw);
     rig.torso.rotation.set(p.lean * D, 0.1 * sw, 0);
 
+    // cartoon life: stretch in the air and squash on landing, a small wind-up before a gesture, and breathing
+    let sq = 1, wind = 0;
+    if (!R && clip === "jump") {
+      const air = cl(-p.bob / 55, 0, 1);                                    // 0 on the ground, 1 at the top of a hop
+      sq = air < 0.2 ? lerp(0.9, 1, air / 0.2) : 1 + 0.06 * (air - 0.2) / 0.8;
+    } else if (!R && st.clipT < 0.25 && clip !== "idle" && clip !== "walk" && clip !== "run") {
+      wind = Math.sin(Math.PI * st.clipT / 0.25);
+    }
+    const sy = sq * (1 - 0.03 * wind), sx = 1 / Math.sqrt(sy);              // squash keeps the volume, so it gets wider as it gets shorter
+    rig.body.scale.set(sx, sy, sx);
+    rig.body.position.y -= 0.03 * wind;
+    rig.torso.rotation.x += 0.08 * wind;
+    const br = Math.sin(lastT * 1.7 + rig.s * 9) * (R ? 0.5 : 1);
+    rig.torso.scale.set(1 + br * 0.01, 1 + br * 0.015, 1 + br * 0.022);
+    
+
     const setArm = (sh: THREE.Group, el: THREE.Group, aU: number, aB: number, sgn: number) => {
       sh.rotation.set(0, 0, 0); el.rotation.set(0, 0, 0);
       if (st.holding && (!st.oneHand || sgn > 0)) {
