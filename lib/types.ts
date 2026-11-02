@@ -35,7 +35,6 @@ export interface Pose {
 export interface Action {
   t0: number; t1: number;
   seat?: number; turn?: number; sx?: number; sd?: number; sh?: number; lx?: number; ld?: number; lh?: number;   // sitting, lying, turning 
-  seat?: number;   // which prop (chair, sofa, bench) the character is sitting on
   clip?: ClipId; expr?: Expr; say?: string; moveTo?: number;
   look?: string; nod?: boolean; shake?: boolean; view?: View;
   fromX?: number;      // start this move from here (enter from off-screen or a door)
