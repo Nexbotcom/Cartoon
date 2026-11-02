@@ -318,28 +318,32 @@ export function createRenderer3D(): Renderer3D {
   // ---------- posing ----------
   const poseRig = (rig: Rig, st: ReturnType<typeof actorState>, jump: boolean, dt: number) => {
     const p = st.pose, clip = st.clip, side = st.walking || st.view === "side";
-    const lie = p.lie;
-    const seatA = (st.seatRot ?? 0) * D;            // direction of the chair or bed we are on
-    rig.root.position.set(
-    toX(st.x) + lie * 0.9 * Math.cos(seatA) + st.slide * 0.3 * Math.sin(seatA), 0,
-    toZ(st.depth) - lie * 0.9 * Math.sin(seatA) + st.slide * 0.3 * Math.cos(seatA));
-    
+    const R = st.rest;                                    // sitting or lying: exact hip spot and height from the engine
+    rig.root.position.set(toX(st.x), 0, toZ(st.depth));   // the root always sits right under the hips
+
     let target = 0;
     if (st.moving) target = st.heading;
-
-    else if (p.sit >= 0.05) target = seatA;
-    else if (st.faceHeading !== undefined && lie < 0.05) target = st.faceHeading;
+    else if (st.faceHeading !== undefined) target = st.faceHeading;
     else if (side) target = st.face > 0 ? Math.PI / 2 : -Math.PI / 2;
     else if (st.view === "back") target = Math.PI;
     else target = cl(st.lookEx * 0.55, -0.55, 0.55);
-    if (!rig.init || jump) { rig.angle = target; rig.init = true; }
-    else rig.angle += shortest(target - rig.angle) * (1 - Math.exp(-dt * 9));
-    const faceA = aLerp(rig.angle, seatA, p.sit);
-    rig.root.rotation.y = aLerp(faceA, seatA + Math.PI / 2, lie);
+    if (R) {
+      const w = cl(R.sw * 3, 0, 1);                       // settle into the seat's direction as the body goes down
+      rig.root.rotation.y = aLerp(rig.angle, R.yaw, w);
+      if (w >= 1) rig.angle = R.yaw;
+      rig.init = true;
+    } else {
+      if (!rig.init || jump) { rig.angle = target; rig.init = true; }
+      else rig.angle += shortest(target - rig.angle) * (1 - Math.exp(-dt * 9));
+      rig.root.rotation.y = rig.angle;
+    }
     // a little hip sway and shoulder twist while walking
-    const sw = st.walking ? cl(p.lLU / (clip === "run" ? 48 : 26), -1, 1) : 0;
-    rig.body.position.y = -p.bob * 0.0058 - p.sit * 0.27 + lie * 0.78;
-    rig.body.rotation.set(-lie * Math.PI / 2, -0.05 * sw, 0.015 * sw);
+    const sw = st.walking && !R ? cl(p.lLU / (clip === "run" ? 48 : 26), -1, 1) : 0;
+    // the body turns about the hips: down onto a seat, or back onto a bed
+    const lieA = R ? R.tw * Math.PI / 2 : 0;
+    const hipLocal = R ? R.hipY / rig.s : 0.88;
+    rig.body.position.set(0, hipLocal - 0.88 * Math.cos(lieA) - p.bob * 0.0058, 0.88 * Math.sin(lieA));
+    rig.body.rotation.set(-lieA, -0.05 * sw, 0.015 * sw);
     rig.torso.rotation.set(p.lean * D, 0.1 * sw, 0);
 
     const setArm = (sh: THREE.Group, el: THREE.Group, aU: number, aB: number, sgn: number) => {
@@ -359,10 +363,17 @@ export function createRenderer3D(): Renderer3D {
     };
     setArm(rig.armL, rig.elL, p.aLU, p.aLB, -1);
     setArm(rig.armR, rig.elR, p.aRU, p.aRB, 1);
+    if (R && !st.holding) {                                // hands rest on the lap while sitting
+      const w = R.sw * (1 - R.tw) * 0.8;
+      for (const [sh, el, sgn] of [[rig.armL, rig.elL, -1], [rig.armR, rig.elR, 1]] as const) {
+        sh.rotation.x = lerp(sh.rotation.x, -0.55, w); sh.rotation.z = lerp(sh.rotation.z, sgn * 0.12, w);
+        el.rotation.x = lerp(el.rotation.x, -1.1, w); el.rotation.z = lerp(el.rotation.z, 0, w);
+      }
+    }
 
     const setLeg = (lg: THREE.Group, kn: THREE.Group, aU: number, aB: number, sgn: number) => {
       lg.rotation.set(0, 0, 0); kn.rotation.set(0, 0, 0);
-      if (p.sit > 0.02 && !st.moving) { lg.rotation.x = -p.sit * 1.25; kn.rotation.x = p.sit * 1.25; return; }
+      if (R) { lg.rotation.x = -R.thigh; kn.rotation.x = R.thigh; return; }   // thighs and shins bend so the feet stay on the floor
       if (clip === "jump") { lg.rotation.x = -0.5; kn.rotation.x = 1.0; return; }
       if (side) { lg.rotation.x = -aU * D; kn.rotation.x = aB * D; }
       else { lg.rotation.z = sgn * aU * D * 0.5; kn.rotation.x = Math.max(0, aB) * D; }
@@ -464,7 +475,7 @@ export function createRenderer3D(): Renderer3D {
   let lastNow = performance.now(), lastT = 0;
   let RW = W, RH = H;
   const render = (c: CanvasRenderingContext2D, s0: Scene, t: number, o: RenderOpts) => {
-        // follow the size of the picture: wide for a video, tall for a Short
+    // follow the size of the picture: wide for a video, tall for a Short
     const cw = c.canvas.width, ch = c.canvas.height;
     if (cw !== RW || ch !== RH) {
       RW = cw; RH = ch;
@@ -510,7 +521,8 @@ export function createRenderer3D(): Renderer3D {
       const st = { ...st0, pose: smoothPose("3d" + i, st0.pose, t) };
       poseRig(rig, st, jump, dt);
       sits[i] = st.pose.sit;
-      if (st.seatIdx !== undefined) slides[st.seatIdx] = Math.max(slides[st.seatIdx] ?? 0, st.slide);
+      const R2 = st.rest;
+      if (R2?.seatIdx !== undefined && R2.slideM > 0) slides[R2.seatIdx] = Math.max(slides[R2.seatIdx] ?? 0, R2.slideM);
       if (st.say) talkers.push({ x: toX(st.x), y: 1.86 * rig.s, z: toZ(st.depth), say: st.say });
     });
 
@@ -537,7 +549,7 @@ export function createRenderer3D(): Renderer3D {
           holder.root.position.z + Math.cos(holder.angle) * 0.32 * holder.s);
         po.g.rotation.y = holder.angle;
       } else {
-        po.g.position.set(toX(pl.x) + Math.sin(rotY) * (slides[i] ?? 0) * 0.3, pl.lift / UNIT, toZ(pl.depth) + Math.cos(rotY) * (slides[i] ?? 0) * 0.3);
+        po.g.position.set(toX(pl.x) + Math.sin(rotY) * (slides[i] ?? 0), pl.lift / UNIT, toZ(pl.depth) + Math.cos(rotY) * (slides[i] ?? 0));
         const dir = (p.flip ? -1 : 1) * (p.kind === "car" ? pl.face : 1);
         po.g.rotation.y = p.kind === "car" ? (dir > 0 ? 0 : Math.PI) + rotY : (p.flip ? Math.PI : 0) + rotY;
       }
@@ -582,21 +594,13 @@ export function createRenderer3D(): Renderer3D {
     }
     c.drawImage(canvas, 0, 0, RW, RH);
 
-
-
-
-        if (o.bubbles && !o.editor) {
+    if (o.bubbles && !o.editor) {
       for (const q of talkers) {
         const v = new THREE.Vector3(q.x, q.y, q.z).project(camera);
         if (v.z > -1 && v.z < 1) drawBubble(c, q.say, (v.x * 0.5 + 0.5) * RW, (-v.y * 0.5 + 0.5) * RH);
       }
     }
   };
-
-
-
-
-  
 
   return {
     render,
@@ -621,4 +625,3 @@ export function createRenderer3D(): Renderer3D {
     dispose() { k.dispose(scene3); renderer.dispose(); },
   };
 }
-
