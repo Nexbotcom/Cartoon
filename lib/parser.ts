@@ -23,6 +23,9 @@ const ENTER = /\benters?\b|\bentering\b|\bcomes? in\b|\b(walks?|runs?|drives?) i
 const ENTER_SIDE = /(?:enter\w*|comes? in|arrives?|appears?|from)\s+(?:the\s+)?(?:from\s+)?(?:the\s+)?(left|right)/;
 const EXIT_SIDE = /(?:exit\w*|leave\w*|out|off|away)\b[^,.]*?\b(left|right)/;
 
+// seat heights (metres) and where the hips rest, measured from the 3D furniture
+const SEAT_TOP: Partial<Record<PropKind, number>> = { chair: 0.515, sofa: 0.52, bench: 0.45 };
+const SEAT_BACK: Partial<Record<PropKind, number>> = { chair: -0.08, sofa: -0.02, bench: -0.06 };
 const HOLDABLE: string[] = ["box", "cake", "bag", "ball", "phone"];
 const KICK = /\b(kick|kicks|kicking|shoot|shoots|shooting|strike|strikes|boot|boots)\b/;
 const SIT = /\b(sit|sits|sitting|seated)\b|\btakes? a seat\b/;
@@ -102,7 +105,6 @@ export function parseScript(
   const warnings: string[] = [];
   const warn = (m: string) => { if (!warnings.includes(m)) warnings.push(m); };
   const notes: string[] = [];
-  
   const seatedOn: (number | undefined)[] = actors.map(() => undefined);
   const seatSlot: number[] = actors.map(() => -1);
   const seatOcc: Record<number, (number | undefined)[]> = {};
@@ -132,55 +134,22 @@ export function parseScript(
     const cx = (pxp[pi] - 640) / 150, cz = -pdepthP[pi] * 8;
     return { minX: cx - h[0] - RAD, maxX: cx + h[0] + RAD, minZ: cz - h[1] - RAD, maxZ: cz + h[1] + RAD };
   };
-
-
-
-
-
-
-
-
-
-
-  
-const standAt = (pi: number, fromX: number): { x: number; d: number } => {
-  const h = half(pi);
-  const k = props[pi].kind;
-  const dir = fromX < pxp[pi] ? -1 : 1;
-
-  if (FRONT_KINDS.has(k)) {
-    const f0: [number, number] = FOOTPRINT[k] ?? [0.5, 0.1];
-    const off = f0[1] * props[pi].scale + 0.6;
-    const r0 = rot(pi);
-    const cxm = (pxp[pi] - 640) / 150;
-    const czm = -pdepthP[pi] * 8;
-
-    return {
-      x: Math.round(640 + (cxm + Math.sin(r0) * off) * 150),
-      d: cl(-(czm + Math.cos(r0) * off) / 8, -0.9, 1.4)
-    };
-  }
-
-  const halfWidth = h === null ? 0.15 : h[0];
-
-  return {
-    x: pxp[pi] + dir * (halfWidth * 150 + 52),
-    d: pdepthP[pi]
+  // a good place to stand when going to a prop: in front of tall things, beside everything else
+  const standAt = (pi: number, fromX: number): { x: number; d: number } => {
+    const h = half(pi);
+    const k = props[pi].kind;
+    const dir = fromX < pxp[pi] ? -1 : 1;
+    if (FRONT_KINDS.has(k)) {
+      const f0: [number, number] = FOOTPRINT[k] ?? [0.5, 0.1];
+      const off = f0[1] * props[pi].scale + 0.6;
+      const r0 = rot(pi);
+      const cxm = (pxp[pi] - 640) / 150;
+      const czm = -pdepthP[pi] * 8;
+      return { x: Math.round(640 + (cxm + Math.sin(r0) * off) * 150), d: cl(-(czm + Math.cos(r0) * off) / 8, -0.9, 1.4) };
+    }
+    const halfWidth = h === null ? 0.15 : h[0];
+    return { x: pxp[pi] + dir * (halfWidth * 150 + 52), d: pdepthP[pi] };
   };
-};
-
-
-
-
-
-
-
-
-
-
-
-
-  
   const route = (x0: number, d0: number, x1: number, d1: number, ignore: number[]): { x: number; d: number }[] => {
     const A: P = { X: (x0 - 640) / 150, Z: -d0 * 8 }, B: P = { X: (x1 - 640) / 150, Z: -d1 * 8 };
     const bx0 = Math.min(A.X, B.X) - 3, bx1 = Math.max(A.X, B.X) + 3, bz0 = Math.min(A.Z, B.Z) - 3, bz1 = Math.max(A.Z, B.Z) + 3;
@@ -210,24 +179,21 @@ const standAt = (pi: number, fromX: number): { x: number; d: number } => {
     }
     return (best ?? []).map(p => ({ x: Math.round(640 + p.X * 150), d: cl(-p.Z / 8, -0.9, 1.4) }));
   };
-
-    // a point on a prop, given in metres along it (lx) and out from its front (lz)
+  // a point on a prop, given in metres along it (lx) and out from its front (lz)
   const localPt = (pi: number, lx: number, lz: number) => {
     const r = rot(pi), cx = (pxp[pi] - 640) / 150, cz = -pdepthP[pi] * 8;
     const X = cx + lx * Math.cos(r) + lz * Math.sin(r), Z = cz - lx * Math.sin(r) + lz * Math.cos(r);
     return { x: Math.round(640 + X * 150), d: -Z / 8 };
   };
-  // where a character steps to after getting up from a seat or a bed
-  // where a character steps to after getting up from a seat or a bed
-  const stepOut = (pi: number): { x: number; d: number } => {
+  // a standing place in front of (or beside) a seat or bed: the first one with nothing in the way
+  const restSpot = (pi: number, lx: number, front: number) => {
     const h = half(pi) ?? [0.4, 0.4];
-    const r = rot(pi);
-    const cx = (pxp[pi] - 640) / 150, cz = -pdepthP[pi] * 8;
-    const cands: [number, number][] = [[0, h[1] + 0.4], [h[0] + 0.4, 0], [-(h[0] + 0.4), 0], [0, -(h[1] + 0.4)]];
+    const r = rot(pi), cx = (pxp[pi] - 640) / 150, cz = -pdepthP[pi] * 8;
+    const cands: [number, number][] = [[lx, front], [h[0] + 0.45, 0], [-(h[0] + 0.45), 0], [lx, -(h[1] + 0.4)]];
     const rects = props.map((_, j) => (j === pi ? null : rectOf(j)));
     let first: { x: number; d: number } | null = null;
-    for (const [lx, lz] of cands) {
-      const X = cx + lx * Math.cos(r) + lz * Math.sin(r), Z = cz - lx * Math.sin(r) + lz * Math.cos(r);
+    for (const [qx, qz] of cands) {
+      const X = cx + qx * Math.cos(r) + qz * Math.sin(r), Z = cz - qx * Math.sin(r) + qz * Math.cos(r);
       const pt = { x: Math.round(640 + X * 150), d: cl(-Z / 8, -0.9, 1.4) };
       if (!first) first = pt;
       if (!rects.some(q => q && inRect(q, X, Z))) return pt;
@@ -242,39 +208,22 @@ const standAt = (pi: number, fromX: number): { x: number; d: number } => {
     for (let s = 0; s < slots.length; s++) if (occ[s] === undefined) return s;
     return -1;
   };
-  const seatPoint = (pi: number, slot: number) => {
-    const ox = (SEATS[props[pi].kind] as number[])[slot] * props[pi].scale, r = rot(pi);
-    return { x: Math.round(pxp[pi] + ox * Math.cos(r)), d: pdepthP[pi] + (ox * Math.sin(r)) / 150 / 8 };
-  };
 
   // ---------- small building blocks ----------
   const leaveSeat = (who: number, t: number): number => {
-    const bi = lyingBed[who];
     if (lyingOn[who]) {
       lyingOn[who] = false; lyingBed[who] = -1;
-      actors[who].actions.push({ t0: t, t1: t + 2.1, posture: "stand" });
-      if (bi >= 0) {
-        const o = stepOut(bi);
-        
-        const far = Math.abs(o.x - px[who]) > 6 || Math.abs(o.d - pdepth[who]) > 0.01;
-        if (far) actors[who].actions.push({ t0: t + 2.1, t1: t + 2.65, clip: "walk", moveTo: o.x, toDepth: o.d });
-        px[who] = o.x; pdepth[who] = o.d;
-        return far ? t + 2.65 : t + 2.1;
-      }
-      return t + 0.8;
+      actors[who].actions.push({ t0: t, t1: t + 4.0, posture: "stand" });     // sit up, sit on the edge, then stand
+      return t + 4.0;
     }
     const pi = seatedOn[who];
     if (pi === undefined) return t;
-    actors[who].actions.push({ t0: t, t1: t + 0.9, posture: "stand" });
+    const dur = 1.6 + (props[pi].kind === "chair" ? 1.1 : 0);
+    actors[who].actions.push({ t0: t, t1: t + dur, posture: "stand" });       // the chair slides out, then they stand
     const occ = seatOcc[pi];
     if (occ && seatSlot[who] >= 0) occ[seatSlot[who]] = undefined;
     seatedOn[who] = undefined; seatSlot[who] = -1;
-
-    const o = stepOut(pi);
-    const far = Math.abs(o.x - px[who]) > 6 || Math.abs(o.d - pdepth[who]) > 0.01;
-    if (far) actors[who].actions.push({ t0: t + 0.9, t1: t + 1.45, clip: "walk", moveTo: o.x, toDepth: o.d });
-    px[who] = o.x; pdepth[who] = o.d;
-    return far ? t + 1.45 : t + 0.9;
+    return t + dur;
   };
   const planLegs = (who: number, tx: number, td: number, run: boolean, ignore: number[]): Leg[] => {
     const pts = [...route(px[who], pdepth[who], tx, td, ignore), { x: tx, d: td }];
@@ -451,16 +400,15 @@ const standAt = (pi: number, fromX: number): { x: number; d: number } => {
         }
         if (bi !== undefined) {
           t = leaveSeat(who, t);
-          const ap = stepOut(bi);                    // stand beside the bed, sit on the edge, then lie back
-          t = walkTo(who, ap.x, ap.d, t, false, []);
-          me.actions.push({ t0: t, t1: t + 0.5, turn: props[bi].rot ?? 0 });
-          t += 0.5;
-          const hb = half(bi) ?? [1.05, 0.75];
-          const ed = localPt(bi, 0, Math.max(0.3, hb[1] - 0.32)), li = localPt(bi, 0, 0);
-          
-          me.actions.push({ t0: t, t1: t + 2.1, posture: "lie", rot: props[bi].rot ?? 0, sx: ed.x, sd: ed.d, lx: li.x, ld: li.d }); notes.push(`${me.def.name} lies on ${props[bi].name} (from ${t.toFixed(1)}s)`);
-          lyingOn[who] = true; lyingBed[who] = bi; t += 2.1; moveDone = true;
-          
+          const bsc = props[bi].scale, ms = me.def.height / 300, ex = 0.3 * bsc;
+          const spot = restSpot(bi, ex, 0.7 * bsc + 0.4);                            // stand beside the bed first
+          const ed = localPt(bi, ex, 0.5 * bsc), li = localPt(bi, -0.05 * bsc, 0);   // edge of the mattress, then the middle
+          t = walkTo(who, spot.x, spot.d, t, false, []);
+          me.actions.push({ t0: t, t1: t + 0.8, turn: props[bi].rot ?? 0 });
+          t += 0.8;
+          me.actions.push({ t0: t, t1: t + 4.6, posture: "lie", rot: props[bi].rot ?? 0, seat: bi, sx: ed.x, sd: ed.d, sh: 0.73 * bsc + 0.075 * ms, lx: li.x, ld: li.d, lh: 0.73 * bsc + 0.11 * ms });
+          notes.push(`${me.def.name} lies on ${props[bi].name} (from ${t.toFixed(1)}s)`);
+          lyingOn[who] = true; lyingBed[who] = bi; t += 4.6; moveDone = true;
         } else warn(`${me.def.name} cannot lie down: there is no Bed on stage.`);
       } else if (SIT.test(l)) {
         const seatWord = l.match(/\b(chairs?|sofas?|couch(?:es)?|benche?s?|seats?)\b/)?.[1];
@@ -489,15 +437,19 @@ const standAt = (pi: number, fromX: number): { x: number; d: number } => {
           if (pi !== undefined) {
             t = leaveSeat(who, t);
             const slot = freeSlot(pi);
-            const sp = seatPoint(pi, slot);
-            const ap = stepOut(pi);                  // stand in front of or beside the seat first, never walk through it
-            t = walkTo(who, ap.x, ap.d, t, run, []);
-            me.actions.push({ t0: t, t1: t + 0.5, turn: props[pi].rot ?? 0 });   // turn to face the way we will sit
-            t += 0.5;
-            me.actions.push({ t0: t, t1: t + 0.9, posture: "sit", rot: props[pi].rot ?? 0, seat: pi, sx: sp.x, sd: sp.d });
+            const kind = props[pi].kind, psc = props[pi].scale;
+            const lxm = ((SEATS[kind] as number[])[slot] * psc) / 150;              // sideways offset of this place (metres)
+            const spot = restSpot(pi, lxm, 0.62 * psc);                              // stand in front of the seat first
+            const hip = localPt(pi, lxm, (SEAT_BACK[kind] ?? -0.05) * psc);
+            const hipH = (SEAT_TOP[kind] ?? 0.5) * psc + 0.075 * (me.def.height / 300);
+            t = walkTo(who, spot.x, spot.d, t, run, []);
+            me.actions.push({ t0: t, t1: t + 0.8, turn: props[pi].rot ?? 0 });     // turn to face the way we will sit
+            t += 0.8;
+            const dur = 1.6 + (kind === "chair" ? 1.1 : 0);                          // sit down fully, then the chair slides in
+            me.actions.push({ t0: t, t1: t + dur, posture: "sit", rot: props[pi].rot ?? 0, seat: pi, sx: hip.x, sd: hip.d, sh: hipH });
             (seatOcc[pi] ??= [])[slot] = who;
             seatedOn[who] = pi; seatSlot[who] = slot;
-            t += 0.9; moveDone = true;
+            t += dur; moveDone = true;
           }
         }
       }
@@ -533,7 +485,7 @@ const standAt = (pi: number, fromX: number): { x: number; d: number } => {
       }
     }
 
-        // ----- kick the ball -----
+    // ----- kick the ball -----
     if (!moveDone && KICK.test(l)) {
       let bi: number | undefined = propHits.find(i => props[i].kind === "ball");
       if (bi === undefined) {
@@ -721,7 +673,7 @@ const standAt = (pi: number, fromX: number): { x: number; d: number } => {
   };
 
   // ---------- one step of a camera line ----------
-    const camSeg = (seg: string, t0: number): number => {
+  const camSeg = (seg: string, t0: number): number => {
     const l = seg.toLowerCase();
     const explicit = l.match(/(\d+(?:\.\d+)?)\s*(?:s\b|sec)/)?.[1];
     const slow = /\b(slow|slowly|gentle|gently)\b/.test(l);
@@ -789,10 +741,6 @@ const standAt = (pi: number, fromX: number): { x: number; d: number } => {
     return t0 + ramp;                                   // otherwise it stays until the next camera line
   };
   const camSegOld = (seg: string, t0: number): number => {
-    
-
-
-    
     const l = seg.toLowerCase();
     const explicit = l.match(/(\d+(?:\.\d+)?)\s*(?:s\b|sec)/)?.[1];
     const orbit = /\b(360|orbit\w*|spin\w*|revolv\w*|rotate\w* around|circl\w* around)\b/.test(l);
