@@ -441,7 +441,7 @@ export function createRenderer3D(): Renderer3D {
       const sig = sigOf(a.def), cur = rigs[i];
       if (!cur || cur.sig !== sig) {
         if (cur) { scene3.remove(cur.root); k.dispose(cur.root); }
-        const r = buildCharacter(a.def);
+        const r = buildCharacterV2(a.def);
         r.sig = sig; r.root.scale.setScalar(a.def.height / 300);
         scene3.add(r.root); rigs[i] = r;
       }
