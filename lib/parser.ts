@@ -157,7 +157,40 @@ export function parseScript(
     const halfWidth = h === null ? 0.15 : h[0];
     return { x: pxp[pi] + dir * (halfWidth * 150 + 52), d: pdepthP[pi] };
   };
+      // shortest walk around the furniture: a graph of the corners of every solid piece, searched for the shortest clear path
   const route = (x0: number, d0: number, x1: number, d1: number, ignore: number[]): { x: number; d: number }[] => {
+    const A: P = { X: (x0 - 640) / 150, Z: -d0 * 8 }, B: P = { X: (x1 - 640) / 150, Z: -d1 * 8 };
+    const rects: Rect[] = [];
+    props.forEach((_, i) => { if (!ignore.includes(i)) { const r = rectOf(i); if (r) rects.push(r); } });
+    const blocked = (a: P, b: P) => rects.some(r => segHits(a, b, r));
+    if (!blocked(A, B)) return [];
+    const nodes: P[] = [A, B];
+    for (const r of rects) for (const X of [r.minX - 0.05, r.maxX + 0.05]) for (const Z of [r.minZ - 0.05, r.maxZ + 0.05]) {
+      if (!rects.some(o => inRect(o, X, Z)) && Math.abs(X) < 16 && Z > -12 && Z < 8) nodes.push({ X, Z });
+    }
+    const n = nodes.length, dst = new Array<number>(n).fill(1e9), prev = new Array<number>(n).fill(-1), done = new Array<boolean>(n).fill(false);
+    dst[0] = 0;
+    for (let it = 0; it < n; it++) {
+      let u = -1;
+      for (let i = 0; i < n; i++) if (!done[i] && (u < 0 || dst[i] < dst[u])) u = i;
+      if (u < 0 || dst[u] >= 1e9) break;
+      done[u] = true;
+      if (u === 1) break;
+      for (let v = 0; v < n; v++) {
+        if (done[v]) continue;
+        const w = dst[u] + dist(nodes[u], nodes[v]);
+        if (w >= dst[v] || blocked(nodes[u], nodes[v])) continue;
+        dst[v] = w; prev[v] = u;
+      }
+    }
+    if (prev[1] < 0) return [];
+    const out: { x: number; d: number }[] = [];
+    for (let c = prev[1]; c > 0; c = prev[c]) out.unshift({ x: Math.round(640 + nodes[c].X * 150), d: cl(-nodes[c].Z / 8, -0.9, 1.4) });
+    return out;
+  };
+  const routeOld = (x0: number, d0: number, x1: number, d1: number, ignore: number[]): { x: number; d: number }[] => {
+
+    
     const A: P = { X: (x0 - 640) / 150, Z: -d0 * 8 }, B: P = { X: (x1 - 640) / 150, Z: -d1 * 8 };
     const bx0 = Math.min(A.X, B.X) - 3, bx1 = Math.max(A.X, B.X) + 3, bz0 = Math.min(A.Z, B.Z) - 3, bz1 = Math.max(A.Z, B.Z) + 3;
     const rects: Rect[] = [];
@@ -267,7 +300,7 @@ export function parseScript(
   };
   const pickUp = (who: number, pi: number, t0: number): number => {
     const sp = standAt(pi, px[who]);
-    const t = walkTo(who, sp.x, sp.d, t0, false, [pi]);
+    const t = walkTo(who, sp.x, sp.d, t0, false, []);
     const hold: Hold = { t0: t + 0.5, t1: 1e9, by: who };
     props[pi].holds.push(hold);
     holdingOf[who] = { pi, hold };
@@ -282,7 +315,7 @@ export function parseScript(
   };
   const rideIn = (who: number, ci: number, t0: number): number => {
     const sp = standAt(ci, px[who]);
-    const t = walkTo(who, sp.x, sp.d, t0, false, [ci]);
+    const t = walkTo(who, sp.x, sp.d, t0, false, []);
     const ride: Action = { t0: t, t1: 1e9, ride: ci };
     actors[who].actions.push(ride);
     rideOpen[who] = ride; rideCar[who] = ci;
@@ -571,7 +604,7 @@ export function parseScript(
         const surf = propHits.find(i => SURFACE[props[i].kind] !== undefined && i !== hn.pi);
         if (surf !== undefined) {
           const sp = standAt(surf, px[who]);
-          t = walkTo(who, sp.x, sp.d, t, false, [surf]);
+          t = walkTo(who, sp.x, sp.d, t, false, []);
           release(who, t + 0.4, pxp[surf], pdepthP[surf] - 0.002, SURFACE[props[surf].kind] as number);
         } else {
           release(who, t + 0.4, px[who] + 50, pdepth[who] - 0.002, 0);
@@ -687,7 +720,7 @@ export function parseScript(
 
       if (!enter && !exit) {
         // an ordinary walk: routed around furniture
-      const legs = planLegs(who, tx, wd, run, usedProp !== undefined ? [usedProp] : []);
+      const legs = planLegs(who, tx, wd, run, []);
         if (companion !== undefined) {                       // "walk with Mina": she walks beside us, 0.75 m to the side
           const ci = companion, cxm = (tx - 640) / 150, czm = -wd * 8, sxm = (px[who] - 640) / 150, szm = -pdepth[who] * 8;
           let dxm = cxm - sxm, dzm = czm - szm;
