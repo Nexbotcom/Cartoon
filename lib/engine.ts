@@ -294,7 +294,36 @@ export function actorState(s: Scene, a: Actor, t: number) {
     }
   }
 
-  const view: View = clip === "type" ? "front" : sideNow ? (depthWalk ? (mz > 0 ? "front" : "back") : "side") : viewA ?? "front";
+
+
+    // handshake, drinking, eating, reading: how far the hand is raised (w) and the rhythm of the movement (beat)
+  const ez2 = (x: number) => sm(cl(x, 0, 1));
+  let hand: { kind: "shake" | "drink" | "eat" | "read"; w: number; beat: number } | undefined;
+  const shakeA = act.find(q => q.shake);
+  const useA = act.find(q => q.use);
+  if (shakeA) {
+    const u = (t - shakeA.t0) / Math.max(0.01, shakeA.t1 - shakeA.t0);
+    const w = ez2(u / 0.15) * (1 - ez2((u - 0.85) / 0.15));
+    hand = { kind: "shake", w, beat: Math.sin((t - shakeA.t0) * 9) * w };
+    pose.aRU = lerp(pose.aRU, 70 + 6 * hand.beat, w); pose.aRB = lerp(pose.aRB, 25, w);
+  } else if (useA && useA.use) {
+    const u = (t - useA.t0) / Math.max(0.01, useA.t1 - useA.t0);
+    if (useA.use === "drink") {
+      const w = ez2(u / 0.22) * (1 - ez2((u - 0.78) / 0.22));
+      const tilt = ez2((u - 0.3) / 0.12) * (1 - ez2((u - 0.62) / 0.12));
+      hand = { kind: "drink", w, beat: tilt };
+      pose.pitch -= 8 * tilt; pose.mouth = Math.max(pose.mouth, 0.3 * tilt);
+    } else if (useA.use === "eat") {
+      const f = (u * 3) % 1, w = Math.pow(Math.sin(Math.PI * f), 0.6) * ez2(u * 12) * ez2((1 - u) * 12);
+      hand = { kind: "eat", w, beat: f };
+      if (f > 0.55) pose.mouth = Math.max(pose.mouth, 0.6 * Math.abs(Math.sin(t * 13)));
+    } else {
+      const w = ez2(u / 0.2) * (1 - ez2((u - 0.85) / 0.15));
+      hand = { kind: "read", w, beat: 0 };
+      pose.pitch += 16 * w; pose.eyeY = Math.max(pose.eyeY, 0.8 * w);
+    }
+  }
+  const view: View = clip === "type" ? "front" : hand?.kind === "shake" ? "side" : sideNow ? (depthWalk ? (mz > 0 ? "front" : "back") : "side") : viewA ?? "front";
   // people who come in from, or leave toward, the camera fade in and out
   let alpha = 1;
   for (const q of a.actions) {
