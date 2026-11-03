@@ -34,6 +34,7 @@ export interface Pose {
 
 export interface Action {
   t0: number; t1: number;
+  use?: "drink" | "eat" | "read"; shake?: boolean; turnHold?: boolean;   // using a prop, shaking hands, a turn that lasts
   seat?: number; turn?: number; sx?: number; sd?: number; sh?: number; lx?: number; ld?: number; lh?: number;   // sitting, lying, turning 
   clip?: ClipId; expr?: Expr; say?: string; moveTo?: number;
   look?: string; nod?: boolean; shake?: boolean; view?: View;
