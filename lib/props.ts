@@ -35,8 +35,11 @@ export const PROP_LIST: { kind: PropKind; label: string; color: string; depth: n
   { kind: "bush", label: "Bush", color: "#4f9a52", depth: 0.5, w: 120 },
   { kind: "fence", label: "Fence", color: "#c9a77c", depth: 0.6, w: 260 },
   { kind: "crowd", label: "Crowd", color: "#ffffff", depth: 0.5, w: 260 },
-  { kind: "ivstand", label: "IV stand", color: "#9aa4b0", depth: 0.4, w: 50 },
+  { kind: "ivstand", label: "IV stand", color: "#9aa4b0", depth: 0.4, w: 50 },  
   { kind: "phone", label: "Phone", color: "#1d2026", depth: 0.2, w: 24 },
+  { kind: "cup", label: "Cup", color: "#f4f4f4", depth: 0.2, w: 20 },
+  { kind: "book", label: "Book", color: "#3a6fb0", depth: 0.2, w: 28 },
+  { kind: "apple", label: "Apple", color: "#c93a3a", depth: 0.2, w: 18 },
 ];
 
 // where people can sit: x offsets (px) from the middle of the prop
@@ -328,6 +331,24 @@ export function drawProp(
     case "ivstand": {
       c.fillStyle = "#9aa4b0"; c.fillRect(-2, -170, 4, 170); c.fillRect(-24, -4, 48, 4); c.fillRect(-14, -176, 28, 4);
       rr(c, -8, -150, 16, 28, 5); fl(c, "#cfe9ff");
+      break;
+    }
+   case "cup": {
+      rr(c, -7, -16, 14, 16, 3); fl(c, color);
+      rr(c, -7, -16, 14, 4, 2); fl(c, "#6b4a2f");
+      c.strokeStyle = color; c.lineWidth = 2.4; c.beginPath(); c.arc(8, -8, 4.5, -1.2, 1.2); c.stroke();
+      break;
+    }
+    case "book": {
+      rr(c, -13, -20, 26, 20, 2); fl(c, color);
+      rr(c, -11, -18, 22, 16, 1); fl(c, "#f6f1e3");
+      c.fillStyle = color; c.fillRect(-1, -18, 2, 16);
+      break;
+    }
+    case "apple": {
+      circle(c, 0, -8, 8, color);
+      c.fillStyle = "#4a7c2f"; c.fillRect(-0.8, -18, 1.6, 4);
+      circle(c, 3, -17, 2.6, "#5aa83a");
       break;
     }
     case "phone": {
