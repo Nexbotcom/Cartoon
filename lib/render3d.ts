@@ -593,6 +593,21 @@ export function createRenderer3D(): Renderer3D {
       }
     }
 
+
+        // handshake, drinking, eating, reading: arm poses worked out so the hand lands on the mouth, the other hand, or the book
+    const Hd = st.hand;
+    if (Hd && Hd.w > 0.001) {
+      const w = Hd.w;
+      const arm = (g: THREE.Group, e: THREE.Group, x: number, y: number, z: number, ex: number) => {
+        g.rotation.set(lerp(g.rotation.x, x, w), lerp(g.rotation.y, y, w), lerp(g.rotation.z, z, w));
+        e.rotation.x = lerp(e.rotation.x, ex, w); e.rotation.z = lerp(e.rotation.z, 0, w);
+      };
+      if (Hd.kind === "shake") arm(rig.armR, rig.elR, -0.83 - 0.04 * Hd.beat, -0.44, -0.23, -1.01 + 0.09 * Hd.beat);
+      else if (Hd.kind === "drink") arm(rig.armR, rig.elR, -0.64, -0.59, -0.25, -2.31);
+      else if (Hd.kind === "eat") arm(rig.armR, rig.elR, -0.85, -0.59, -0.25, -2.3);
+      else { arm(rig.armR, rig.elR, -0.26, -0.14, -0.21, -1.93); arm(rig.armL, rig.elL, -0.26, 0.14, 0.21, -1.93); }
+    }
+
     const setLeg = (lg: THREE.Group, kn: THREE.Group, aU: number, aB: number, sgn: number) => {
       lg.rotation.set(0, 0, 0); kn.rotation.set(0, 0, 0);
       if (R) { lg.rotation.x = -R.thigh; kn.rotation.x = R.thigh; return; }   // thighs and shins bend so the feet stay on the floor
@@ -732,6 +747,7 @@ export function createRenderer3D(): Renderer3D {
     const talkers: { x: number; y: number; z: number; say: string }[] = [];
     const sits: number[] = [];
     const slides: number[] = [];
+    const beats: number[] = [];
     s.actors.forEach((a, i) => {
       const rig = rigs[i];
       if (!rig) return;
@@ -747,6 +763,7 @@ export function createRenderer3D(): Renderer3D {
       poseRig(rig, st, jump, dt);
       sits[i] = st.pose.sit;
       const R2 = st.rest;
+      beats[i] = st.hand?.kind === "drink" ? st.hand.beat : 0;
       if (R2?.seatIdx !== undefined && R2.slideM > 0) slides[R2.seatIdx] = Math.max(slides[R2.seatIdx] ?? 0, R2.slideM);
       if (st.say) talkers.push({ x: toX(st.x), y: 1.86 * rig.s, z: toZ(st.depth), say: st.say });
     });
@@ -761,7 +778,22 @@ export function createRenderer3D(): Renderer3D {
       const holder = pl.held ? rigs[pl.by] : undefined;
       const rotY = (p.rot ?? 0) * D;
       po.g.rotation.order = "YXZ"; po.g.rotation.set(0, 0, 0);
-      if (pl.held && holder && p.kind === "phone") {
+
+
+      if (pl.held && holder && (p.kind === "cup" || p.kind === "apple")) {
+        // a cup or an apple sits in the right hand; the cup tips toward the mouth while drinking
+        holder.root.updateMatrixWorld(true);
+        tmpV.set(0, -0.09, 0); holder.handR.g.localToWorld(tmpV);
+        po.g.position.copy(tmpV);
+        po.g.rotation.set(-0.9 * (beats[pl.by] ?? 0), holder.angle, 0);
+      } else if (pl.held && holder && p.kind === "book") {
+        // a book is held open in both hands, tilted up toward the reader's face
+        holder.root.updateMatrixWorld(true);
+        tmpV.set(0, -0.09, 0); holder.handR.g.localToWorld(tmpV);
+        const lv = new THREE.Vector3(0, -0.09, 0); holder.handL.g.localToWorld(lv);
+        po.g.position.set((tmpV.x + lv.x) / 2, (tmpV.y + lv.y) / 2 + 0.02, (tmpV.z + lv.z) / 2);
+        po.g.rotation.set(-0.55, holder.angle + Math.PI, 0);
+      } else if (pl.held && holder && p.kind === "phone") {
         // a phone sits in the right hand, screen toward the face
         holder.root.updateMatrixWorld(true);
         holder.handR.g.getWorldPosition(tmpV);
