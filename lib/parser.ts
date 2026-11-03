@@ -26,7 +26,12 @@ const EXIT_SIDE = /(?:exit\w*|leave\w*|out|off|away)\b[^,.]*?\b(left|right)/;
 // seat heights (metres) and where the hips rest, measured from the 3D furniture
 const SEAT_TOP: Partial<Record<PropKind, number>> = { chair: 0.515, sofa: 0.52, bench: 0.45 };
 const SEAT_BACK: Partial<Record<PropKind, number>> = { chair: -0.08, sofa: -0.02, bench: -0.06 };
-const HOLDABLE: string[] = ["box", "cake", "bag", "ball", "phone"];
+const HOLDABLE: string[] = ["box", "cake", "bag", "ball", "phone", "cup", "book", "apple"];
+const DRINK = /\b(drink|drinks|drinking|sip|sips|sipping)\b/;
+const EAT = /\b(eat|eats|eating|bite|bites|biting|munch|munches)\b/;
+const READ = /\b(read|reads|reading)\b/;
+const SHAKE = /\b(shake|shakes|shaking)\s+hands?\b|\bhandshake\b/;
+const MEET = /\b(meet|meets|gather|gathers|huddle|huddles|come together|comes together|get together)\b/;
 const KICK = /\b(kick|kicks|kicking|shoot|shoots|shooting|strike|strikes|boot|boots)\b/;
 const SIT = /\b(sit|sits|sitting|seated)\b|\btakes? a seat\b/;
 const STAND = /\b(stands?|standing|gets? up|rises?)\b/;
@@ -114,6 +119,8 @@ export function parseScript(
   const rideOpen: (Action | undefined)[] = actors.map(() => undefined);
   const rideCar: number[] = actors.map(() => -1);
   let beatEnd = 0, prevStart = 0, maxT = 0;
+  let curEveryone = false;                                         // is the current line an "Everyone:" line?
+  const meetCache = new Map<string, Record<number, { x: number; d: number; deg: number }>>();
 
   const findNames = (l: string, skip: number) => matchIdx(l, actors.map(a => a.def.name), skip);
   const findProps = (l: string) => matchIdx(l, props.map(p => p.name));
@@ -296,7 +303,16 @@ export function parseScript(
     const me = actors[who];
     const quoted = seg.match(/"([^"]+)"/)?.[1];
     let say = quoted ?? seg.match(/\b(?:says?|saying)\s+(.+?)(?=\s+(?:while|and|as|with)\b|[,.;]|$)/i)?.[1]?.trim();
-    const l = seg.replace(/"[^"]*"/g, " ").toLowerCase();
+    let l = seg.replace(/"[^"]*"/g, " ").toLowerCase();
+    // "walk with Mina to the door": Mina walks beside us, so her name must not become the destination
+    let companion: number | undefined;
+    const cm = l.match(/\b(?:walks?|runs?|goes|go|heads?|moves?|strolls?)\s+(?:together\s+)?(?:along\s+)?with\s+([a-z]+)/);
+    if (cm) {
+      const ci = actors.findIndex((a, i) => i !== who && a.def.name.toLowerCase() === cm[1]);
+      if (ci >= 0) { companion = ci; l = l.replace(/\b(?:together\s+)?(?:along\s+)?with\s+[a-z]+/, " "); }
+    }
+
+    
     const explicit = l.match(/(\d+(?:\.\d+)?)\s*(?:s\b|sec)/)?.[1];
     const base = explicit ? +explicit : 0;
     const expr = EXPR.find(([r]) => r.test(l))?.[1];
@@ -455,6 +471,87 @@ export function parseScript(
       }
     }
 
+    
+        // ----- shake hands: stand about a metre apart, face each other, and shake -----
+    if (!moveDone && SHAKE.test(l) && others.length) {
+      const tg = others[0];
+      const cxm = (px[tg] - 640) / 150, czm = -pdepth[tg] * 8, sxm = (px[who] - 640) / 150, szm = -pdepth[who] * 8;
+      let ux = sxm - cxm, uz = szm - czm;
+      const ul = Math.hypot(ux, uz);
+      if (ul < 0.05) { ux = 1; uz = 0; } else { ux /= ul; uz /= ul; }
+      const gx = Math.round(640 + (cxm + ux * 1.04) * 150), gd = cl(-(czm + uz * 1.04) / 8, -0.9, 1.4);
+      t = walkTo(who, gx, gd, t, run, []);
+      const degMe = (Math.atan2(-ux, -uz) * 180) / Math.PI, degThem = (Math.atan2(ux, uz) * 180) / Math.PI;
+      me.actions.push({ t0: t, t1: t + 0.35, turn: degMe, turnHold: true });
+      actors[tg].actions.push({ t0: t, t1: t + 0.35, turn: degThem, turnHold: true });
+      const dur = base || 2.4;
+      me.actions.push({ t0: t + 0.35, t1: t + 0.35 + dur, shake: true, expr: expr ?? "happy", say });
+      actors[tg].actions.push({ t0: t + 0.35, t1: t + 0.35 + dur, shake: true, expr: "happy" });
+      t += 0.35 + dur; moveDone = true;
+    }
+
+    // ----- everyone meets: walk to a ring around the middle and face each other -----
+    if (!moveDone && MEET.test(l) && curEveryone && actors.length > 1) {
+      const key = seg + "@" + t0.toFixed(2);
+      let ring = meetCache.get(key);
+      if (!ring) {
+        const rg: Record<number, { x: number; d: number; deg: number }> = {};
+        const ids = actors.map((_, i) => i).filter(i => rideOpen[i] === undefined);
+        const mid = /cent(er|re)|middle/.test(l);
+        const cxp = mid ? W / 2 : ids.reduce((s, i) => s + px[i], 0) / ids.length;
+        const cdp = mid ? 0.3 : ids.reduce((s, i) => s + pdepth[i], 0) / ids.length;
+        const R = 0.55 + 0.11 * ids.length;
+        const cxm = (cxp - 640) / 150, czm = -cdp * 8;
+        const ang = (i: number) => Math.atan2((px[i] - 640) / 150 - cxm, -pdepth[i] * 8 - czm);
+        const order = [...ids].sort((a, b) => ang(a) - ang(b));
+        const a0 = ang(order[0]);
+        order.forEach((id, k) => {
+          const th = a0 + (k * 2 * Math.PI) / order.length;
+          const gx = cxm + Math.sin(th) * R, gz = czm + Math.cos(th) * R;
+          rg[id] = { x: Math.round(640 + gx * 150), d: cl(-gz / 8, -0.9, 1.4), deg: (Math.atan2(cxm - gx, czm - gz) * 180) / Math.PI };
+        });
+        meetCache.set(key, rg);
+        ring = rg;
+      }
+      const spot = ring[who];
+      if (spot) {
+        t = walkTo(who, spot.x, spot.d, t, run, []);
+        me.actions.push({ t0: t, t1: t + 0.5, turn: spot.deg, turnHold: true });
+        t += 0.5; moveDone = true;
+      }
+    }
+
+    // ----- drink, eat, read -----
+    if (!moveDone) {
+      const use: "drink" | "eat" | "read" | undefined = DRINK.test(l) ? "drink" : EAT.test(l) ? "eat" : READ.test(l) ? "read" : undefined;
+      if (use) {
+        const want: PropKind = use === "drink" ? "cup" : use === "eat" ? "apple" : "book";
+        const nm = use === "drink" ? "Cup" : use === "eat" ? "Apple" : "Book";
+        const hn0 = holdingOf[who];
+        let pi: number | undefined = propHits.find(i => props[i].kind === want);
+        if (pi === undefined && hn0) pi = hn0.pi;
+        if (pi === undefined) {
+          let best = 1e9;
+          for (let i = 0; i < props.length; i++) {
+            if (props[i].kind !== want || props[i].holds.some(h => h.t1 > 1e8 && h.by !== who)) continue;
+            const dd = Math.abs(pxp[i] - px[who]);
+            if (dd < best) { best = dd; pi = i; }
+          }
+        }
+        if (pi === undefined) warn(`${me.def.name} cannot ${use}: there is no ${nm} on stage.`);
+        else {
+          if (holdingOf[who]?.pi !== pi) {
+            if (holdingOf[who]) release(who, t, px[who] + 50, pdepth[who] - 0.002, 0);   // put the other thing down first
+            t = pickUp(who, pi, t);
+          }
+          const dur = base || (use === "drink" ? 3.4 : use === "eat" ? 4.2 : 5);
+          me.actions.push({ t0: t, t1: t + dur, use });
+          t += dur; moveDone = true;
+        }
+      }
+    }
+
+    // ----- pick up, carry, put down, give -----
     // ----- pick up, carry, put down, give -----
     if (!moveDone) {
       const hn = holdingOf[who];
@@ -590,7 +687,24 @@ export function parseScript(
 
       if (!enter && !exit) {
         // an ordinary walk: routed around furniture
-        const legs = planLegs(who, tx, wd, run, usedProp !== undefined ? [usedProp] : []);
+      const legs = planLegs(who, tx, wd, run, usedProp !== undefined ? [usedProp] : []);
+        if (companion !== undefined) {                       // "walk with Mina": she walks beside us, 0.75 m to the side
+          const ci = companion, cxm = (tx - 640) / 150, czm = -wd * 8, sxm = (px[who] - 640) / 150, szm = -pdepth[who] * 8;
+          let dxm = cxm - sxm, dzm = czm - szm;
+          const dl = Math.hypot(dxm, dzm) || 1;
+          dxm /= dl; dzm /= dl;
+          let nx = -dzm, nz = dxm;
+          const side = ((px[ci] - 640) / 150 - sxm) * nx + (-pdepth[ci] * 8 - szm) * nz;
+          if (side < 0) { nx = -nx; nz = -nz; }
+          const cxe = Math.round(640 + (cxm + nx * 0.75) * 150), cde = cl(-(czm + nz * 0.75) / 8, -0.9, 1.4);
+          const tt = legs.reduce((s, g) => s + g.dur, 0);
+          if (tt > 0.05) actors[ci].actions.push({ t0: t, t1: t + tt, clip: run ? "run" : "walk", moveTo: cxe, toDepth: cde, ease: [0.2, 0.2] });
+          px[ci] = cxe; pdepth[ci] = cde;
+        }
+
+
+
+        
         const total = legs.reduce((s, g) => s + g.dur, 0);
         if (gesture && !parallelWalk) {
           if (expr || look || view) me.actions.push({ t0: t, t1: t + Math.max(total, 0.5), expr, look, view });
@@ -821,6 +935,7 @@ export function parseScript(
       return tl;
     };
     let tl = start;
+    curEveryone = everyone;
     if (everyone) { for (let i = 0; i < actors.length; i++) tl = Math.max(tl, run(i)); }
     else tl = run(who);
     maxT = Math.max(maxT, tl);
