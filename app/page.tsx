@@ -25,7 +25,7 @@ Car: enter from the right and drive out of the scene to the left
 Camera: follow Sam`;
 
 type Tab = "script" | "stage" | "look" | "pose" | "timeline" | "film" | "env";
-const WALL_PROPS: PropKind[] = ["picture", "clock", "window", "curtains"];
+const WALL_PROPS: PropKind[] = ["picture", "clock", "window", "curtains", "door"];
 
 interface VoiceStatus { kind: "idle" | "working" | "waiting" | "error" | "quota"; msg: string; done: number; total: number }
 const IDLE: VoiceStatus = { kind: "idle", msg: "", done: 0, total: 0 };
