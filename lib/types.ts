@@ -37,7 +37,7 @@ export interface Action {
   use?: "drink" | "eat" | "read"; shake?: boolean; turnHold?: boolean;   // using a prop, shaking hands, a turn that lasts
   seat?: number; turn?: number; sx?: number; sd?: number; sh?: number; lx?: number; ld?: number; lh?: number;   // sitting, lying, turning 
   clip?: ClipId; expr?: Expr; say?: string; moveTo?: number;
-  look?: string; nod?: boolean; shake?: boolean; view?: View;
+  look?: string; nod?: boolean; view?: View;
   fromX?: number;      // start this move from here (enter from off-screen or a door)
   enter?: boolean;     // becomes visible at t0
   exit?: boolean;      // becomes invisible after t1
