@@ -10,7 +10,7 @@ export type PropKind =
   | "tv" | "door" | "bed" | "tree" | "bench" | "streetlight" | "car"
   | "box" | "cake" | "bag" | "ball" | "goal" | "board"
   | "wardrobe" | "fridge" | "counter" | "rug" | "picture" | "clock" | "window"
-  | "curtains" | "fan" | "locker" | "bin" | "bush" | "fence" | "crowd" | "ivstand" | "phone";
+  | "curtains" | "fan" | "locker" | "bin" | "bush" | "fence" | "crowd" | "ivstand" | "phone" | "cup" | "book" | "apple";
 
 export interface CharacterDef {
   id: string; name: string; style: StyleId;
