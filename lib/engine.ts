@@ -1,7 +1,6 @@
 import { Action, Actor, ClipId, Pose, PropKind, Scene, SceneProp, ThemeId, View } from "./types";
 import { BASE, clips, drawActor } from "./draw";
-import { drawProp } from "./props";
-
+import { FOOTPRINT, SOLID, drawProp } from "./props";
 export const W = 1280, H = 720, GROUND = 560, FOOT = 600;
 const sm = (u: number) => u * u * (3 - 2 * u);
 const lerp = (a: number, b: number, u: number) => a + (b - a) * u;
@@ -149,6 +148,33 @@ export function depthWalkPose(p: Pose, t: number, run: boolean, holding: boolean
   const q: Pose = { ...p, lLU: 3, lRU: 3, lLB: lift(w), lRB: lift(-w), lean: 0, bob: -Math.abs(w) * (run ? 8 : 4) };
   if (!holding) { q.aLU = 7 + w * 4; q.aRU = 7 - w * 4; q.aLB = 10; q.aRB = 10; }
   return q;
+}
+
+
+// solid furniture cannot be walked through: anyone who ends up inside it is moved to the nearest edge
+const BODY = 0.15;                                    // how close to a piece of furniture a character may stand (metres)
+function pushOut(s: Scene, t: number, X0: number, Z0: number): [number, number] {
+  let X = X0, Z = Z0;
+  for (let pass = 0; pass < 3; pass++) {
+    let moved = false;
+    for (const p of s.props) {
+      const f = FOOTPRINT[p.kind] as [number, number] | undefined;
+      if (!f || !SOLID.has(p.kind)) continue;
+      if (p.holds.some(h => t >= h.t0 && t < h.t1) || !visibleAt(p, t)) continue;
+      const r = ((p.rot ?? 0) * Math.PI) / 180, sw = Math.abs(Math.sin(r)) > 0.7;
+      const hx = (sw ? f[1] : f[0]) * p.scale + BODY, hz = (sw ? f[0] : f[1]) * p.scale + BODY;
+      const pp = posAt(p, t, s.props);
+      const cx = (pp.x - 640) / 150, cz = -pp.depth * 8;
+      const dx = X - cx, dz = Z - cz;
+      if (Math.abs(dx) < hx && Math.abs(dz) < hz) {
+        if (hx - Math.abs(dx) < hz - Math.abs(dz)) X = cx + (dx < 0 ? -hx : hx);
+        else Z = cz + (dz < 0 ? -hz : hz);
+        moved = true;
+      }
+    }
+    if (!moved) break;
+  }
+  return [X, Z];
 }
 
 export function actorState(s: Scene, a: Actor, t: number) {
@@ -330,7 +356,13 @@ export function actorState(s: Scene, a: Actor, t: number) {
     if (q.enter && q.fromDepth !== undefined && q.fromDepth < 0 && t >= q.t0) alpha = Math.min(alpha, sm(cl((t - q.t0) / 0.5, 0, 1)));
     if (q.exit && (q.toDepth ?? 0) < 0 && t >= q.t0 && t < q.t1) alpha = Math.min(alpha, 1 - sm(cl((t - (q.t1 - 0.5)) / 0.5, 0, 1)));
   }
-  return { x: restX, depth: restD, face, view, clip, expr, say, pose, lookEx, moving, holding, alpha, seatRot, heading, walking: sideNow, depthWalk, gaitT, oneHand,
+
+    let outX = restX, outD = restD;
+  if (!R && !a.actions.some(q => q.ride !== undefined && t >= q.t0 && t < q.t1)) {
+    const [X, Z] = pushOut(s, t, (restX - 640) / 150, -restD * 8);
+    outX = 640 + X * 150; outD = -Z / 8;
+  }
+  return { x: outX, depth: outD, face, view, clip, expr, say, pose, lookEx, moving, holding, alpha, seatRot, heading, walking: sideNow, depthWalk, gaitT, oneHand,
     faceHeading, faceYaw: faceHeading !== undefined && !lookA ? cl(fdx / 8, -38, 38) : 0, rest,
     slide: 0, seatIdx: undefined as number | undefined, clipT: curAct ? t - curAct.t0 : 99, hand };
 }
