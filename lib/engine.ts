@@ -332,7 +332,7 @@ export function actorState(s: Scene, a: Actor, t: number) {
   }
   return { x: restX, depth: restD, face, view, clip, expr, say, pose, lookEx, moving, holding, alpha, seatRot, heading, walking: sideNow, depthWalk, gaitT, oneHand,
     faceHeading, faceYaw: faceHeading !== undefined && !lookA ? cl(fdx / 8, -38, 38) : 0, rest,
-    slide: 0, seatIdx: undefined as number | undefined, clipT: curAct ? t - curAct.t0 : 99 };
+    slide: 0, seatIdx: undefined as number | undefined, clipT: curAct ? t - curAct.t0 : 99, hand };
 }
 
 // where a prop is right now (it follows whoever is carrying it)
