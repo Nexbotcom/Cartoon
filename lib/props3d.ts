@@ -148,6 +148,21 @@ export function buildProp3D(k: Kit, kind: PropKind, color: string): THREE.Group 
       g.userData.riders = riders;
       break;
     }
+    case "cup":
+      cyl(g, 0.04, 0.032, 0.09, color, 0, 0, 0);
+      cyl(g, 0.036, 0.036, 0.004, "#6b4a2f", 0, 0.043, 0);
+      mesh(g, new THREE.TorusGeometry(0.022, 0.006, 8, 14, Math.PI), toon(color), 0.045, 0, 0).rotation.z = -Math.PI / 2;
+      break;
+    case "apple":
+      sph(g, 0.045, color, 0, 0, 0, 1, 0.92, 1);
+      cyl(g, 0.004, 0.004, 0.025, "#5a3a1e", 0, 0.047, 0);
+      sph(g, 0.012, "#5aa83a", 0.014, 0.05, 0, 1.6, 0.5, 0.8);
+      break;
+    case "book":
+      bx(g, 0.29, 0.2, 0.012, color, 0, 0, -0.012);
+      bx(g, 0.27, 0.185, 0.022, "#f6f1e3", 0, 0, 0.002);
+      bx(g, 0.006, 0.19, 0.024, dk(color, 0.7), 0, 0, 0.002);
+      break;
     case "phone": {
       bx(g, 0.075, 0.15, 0.012, "#1d2026", 0, 0.075, 0);
       const scr = emissiveMat("#7fb3ff", 0.8);
