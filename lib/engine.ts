@@ -247,7 +247,17 @@ export function actorState(s: Scene, a: Actor, t: number) {
     if (f) { faceHeading = Math.atan2(f[0], f[1]); fdx = f[0] * 150; }
   }
   const turnAct = act.find(q => q.turn !== undefined);
-  if (turnAct && !moving) faceHeading = (turnAct.turn as number) * Math.PI / 180;
+  
+  if (turnAct && !moving) { faceHeading = (turnAct.turn as number) * Math.PI / 180; fdx = Math.sin(faceHeading) * 150; }
+  if (!turnAct && !moving && !R) {                    // a "held" turn lasts until the character moves again
+    const hold = lastOf(q => q.turn !== undefined && !!q.turnHold);
+    if (hold && !a.actions.some(q => q.moveTo !== undefined && q.t0 > hold.t0 && q.t0 <= t)) {
+      faceHeading = (hold.turn as number) * Math.PI / 180; fdx = Math.sin(faceHeading) * 150;
+    }
+  }
+
+
+  
   let yaw = pose.yaw, pitch = pose.pitch, ex = 0, ey = 0, face = pos.face;
   if (lookA) {
     const cur = lookVec(s, lookA.look as string, pos.x, t);
