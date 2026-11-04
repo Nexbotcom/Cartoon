@@ -784,7 +784,9 @@ export function parseScript(
         tx = cl(tx, -6000, W + 6000);
         if (enter) fromX = edge(eSide ? eSide === "left" : dirLeft ? true : dirRight ? false : tx < W / 2);
       }
-      const frontIn = enter && /\bfrom (the )?(front|camera|audience|viewer)\b/.test(l);
+
+      if (!enter && !exit) { const f = freeGoal(tx, wd); tx = f.x; wd = f.d; }      // never aim for a spot inside furniture
+      const frontIn = enter && /\bfrom (the )?(front|camera|audience|viewer)\b/.test(l); 
       const frontOut = exit && /\b(to|toward|towards|through|into|out) (the )?(front|camera|audience|viewer)\b/.test(l);
       let fromD: number | undefined;
       if (frontIn) { fromX = tx; fromD = -1.4; }
@@ -794,7 +796,14 @@ export function parseScript(
 
       if (!enter && !exit) {
         // an ordinary walk: routed around furniture
-      const legs = planLegs(who, tx, wd, run, []);
+      let legs = planLegs(who, tx, wd, run, []);
+        if (!routeOk) {                                      // no way round: walk up to the furniture and stop
+          const c = clearPoint(px[who], pdepth[who], tx, wd, []);
+          tx = c.x; wd = c.d; legs = planLegs(who, tx, wd, run, []);
+          warn(`${me.def.name} cannot get there: the furniture is in the way.`);
+        }
+
+        
         if (companion !== undefined) {                       // "walk with Mina": she walks beside us, 0.75 m to the side
           const ci = companion, cxm = (tx - 640) / 150, czm = -wd * 8, sxm = (px[who] - 640) / 150, szm = -pdepth[who] * 8;
           let dxm = cxm - sxm, dzm = czm - szm;
