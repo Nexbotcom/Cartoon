@@ -185,7 +185,7 @@ export function parseScript(
         dst[v] = w; prev[v] = u;
       }
     }
-    if (prev[1] < 0) return [];
+  if (prev[1] < 0) { routeOk = false; return []; }
     const out: { x: number; d: number }[] = [];
     for (let c = prev[1]; c > 0; c = prev[c]) out.unshift({ x: Math.round(640 + nodes[c].X * 150), d: cl(-nodes[c].Z / 8, -0.9, 1.4) });
     return out;
@@ -221,6 +221,69 @@ export function parseScript(
     }
     return (best ?? []).map(p => ({ x: Math.round(640 + p.X * 150), d: cl(-p.Z / 8, -0.9, 1.4) }));
   };
+
+
+    // ---------- reaching things: stand where there is a way in, never inside furniture ----------
+  const keepOut = (x: number, d: number, skip: number): boolean => {
+    const X = (x - 640) / 150, Z = -d * 8;
+    return props.some((_, i) => { if (i === skip) return false; const r = rectOf(i); return !!r && inRect(r, X, Z); });
+  };
+  const freeGoal = (x: number, d: number): { x: number; d: number } => {
+    let X = (x - 640) / 150, Z = -d * 8;
+    for (let pass = 0; pass < 3; pass++) {
+      let moved = false;
+      for (let i = 0; i < props.length; i++) {
+        const r = rectOf(i);
+        if (!r || !inRect(r, X, Z)) continue;
+        const gl = X - r.minX, gr = r.maxX - X, gb = Z - r.minZ, gf = r.maxZ - Z, m = Math.min(gl, gr, gb, gf);
+        if (m === gl) X = r.minX - 0.05; else if (m === gr) X = r.maxX + 0.05; else if (m === gb) Z = r.minZ - 0.05; else Z = r.maxZ + 0.05;
+        moved = true;
+      }
+      if (!moved) break;
+    }
+    return { x: Math.round(640 + X * 150), d: cl(-Z / 8, -0.9, 1.4) };
+  };
+  // when there is no way round, walk as far as is clear and stop in front of the furniture
+  const clearPoint = (x0: number, d0: number, x1: number, d1: number, ignore: number[]) => {
+    const rects: Rect[] = [];
+    props.forEach((_, i) => { if (!ignore.includes(i)) { const r = rectOf(i); if (r) rects.push(r); } });
+    const L = Math.hypot((x1 - x0) / 150, (d1 - d0) * 8), n = Math.max(1, Math.ceil(L / 0.08));
+    let last = { x: x0, d: d0 };
+    for (let k = 1; k <= n; k++) {
+      const u = k / n, X = (x0 - 640) / 150 + ((x1 - x0) / 150) * u, Z = -d0 * 8 - (d1 - d0) * 8 * u;
+      if (L * u > 0.3 && rects.some(r => inRect(r, X, Z))) break;
+      last = { x: Math.round(640 + X * 150), d: -Z / 8 };
+    }
+    return last;
+  };
+  // the best place to stand to use a prop: reachable, outside every other piece of furniture, and a short walk
+  const reachSpot = (who: number, pi0: number): { x: number; d: number } => {
+    let pi = pi0;
+    const cx0 = (pxp[pi0] - 640) / 150, cz0 = -pdepthP[pi0] * 8;
+    const sup = props.findIndex((q, i) => {
+      const r = rectOf(i);
+      return i !== pi0 && SOLID.has(q.kind) && !!r && cx0 > r.minX + RAD && cx0 < r.maxX - RAD && cz0 > r.minZ + RAD && cz0 < r.maxZ - RAD;
+    });
+    if (sup >= 0) pi = sup;                                   // something lying on a table: stand next to the table
+    const sa = standAt(pi, px[who]);
+    const base = freeGoal(sa.x, sa.d);
+    const h = half(pi) ?? [0.3, 0.3];
+    const cx = (pxp[pi] - 640) / 150, cz = -pdepthP[pi] * 8, gx = h[0] + 0.4, gz = h[1] + 0.4;
+    const offs: [number, number][] = [[0, gz], [gx, 0], [-gx, 0], [0, -gz], [gx * 0.8, gz * 0.8], [-gx * 0.8, gz * 0.8], [gx * 0.8, -gz * 0.8], [-gx * 0.8, -gz * 0.8]];
+    const cands = [base, ...offs.map(([qx, qz]) => ({ x: Math.round(640 + (cx + qx) * 150), d: cl(-(cz + qz) / 8, -0.9, 1.4) }))];
+    let best = base, bl = 1e9;
+    cands.forEach((c, k) => {
+      if (keepOut(c.x, c.d, pi)) return;
+      const pts = route(px[who], pdepth[who], c.x, c.d, []);
+      if (!routeOk) return;
+      let len = 0, ax = px[who], ad = pdepth[who];
+      for (const q of [...pts, c]) { len += Math.hypot((q.x - ax) / 150, (q.d - ad) * 8); ax = q.x; ad = q.d; }
+      if (k === 0) len -= 0.3;                                // keep the usual spot when it works
+      if (len < bl) { bl = len; best = c; }
+    });
+    return best;
+  };
+  // a point on a prop, given in metres along it (lx) and out from its front (lz)
   // a point on a prop, given in metres along it (lx) and out from its front (lz)
   const localPt = (pi: number, lx: number, lz: number) => {
     const r = rot(pi), cx = (pxp[pi] - 640) / 150, cz = -pdepthP[pi] * 8;
@@ -292,7 +355,16 @@ export function parseScript(
   };
   const walkTo = (who: number, tx: number, td: number, t0: number, run = false, ignore: number[] = []): number => {
     const t = leaveSeat(who, t0);
-    const end = pushLegs(who, t, planLegs(who, tx, td, run, ignore), run);
+
+    let legs = planLegs(who, tx, td, run, ignore);
+    if (!routeOk) {                                           // no way round: walk up to the furniture and stop, never through it
+      const c = clearPoint(px[who], pdepth[who], tx, td, ignore);
+      tx = c.x; td = c.d; legs = planLegs(who, tx, td, run, ignore);
+      warn(`${actors[who].def.name} cannot get there: the furniture is in the way.`);
+    }
+    const end = pushLegs(who, t, legs, run);
+
+    
     px[who] = tx; pdepth[who] = td;
     return end;
   };
@@ -301,7 +373,7 @@ export function parseScript(
     pxp[pi] = x; pdepthP[pi] = d;
   };
   const pickUp = (who: number, pi: number, t0: number): number => {
-    const sp = standAt(pi, px[who]);
+    const sp = reachSpot(who, pi);
     const t = walkTo(who, sp.x, sp.d, t0, false, []);
     const hold: Hold = { t0: t + 0.5, t1: 1e9, by: who };
     props[pi].holds.push(hold);
@@ -316,7 +388,7 @@ export function parseScript(
     holdingOf[who] = undefined;
   };
   const rideIn = (who: number, ci: number, t0: number): number => {
-    const sp = standAt(ci, px[who]);
+    const sp = reachSpot(who, ci);
     const t = walkTo(who, sp.x, sp.d, t0, false, []);
     const ride: Action = { t0: t, t1: 1e9, ride: ci };
     actors[who].actions.push(ride);
@@ -605,7 +677,7 @@ export function parseScript(
       } else if (hn && PUT.test(l)) {
         const surf = propHits.find(i => SURFACE[props[i].kind] !== undefined && i !== hn.pi);
         if (surf !== undefined) {
-          const sp = standAt(surf, px[who]);
+          const sp = reachSpot(who, surf);
           t = walkTo(who, sp.x, sp.d, t, false, []);
           release(who, t + 0.4, pxp[surf], pdepthP[surf] - 0.002, SURFACE[props[surf].kind] as number);
         } else {
@@ -700,7 +772,7 @@ export function parseScript(
         if (tgt !== undefined && /\b(to|toward|towards|near|beside|next to|approach\w*|over)\b/.test(l)) { tx = px[tgt] + (cur < px[tgt] ? -150 : 150); wd = pdepth[tgt]; }
         else if (propTgt !== undefined && /\b(to|toward|towards|near|beside|next to|at|by|over)\b/.test(l)) {
           usedProp = propTgt;
-          const sp = standAt(propTgt, cur);
+          const sp = reachSpot(who, propTgt);
           tx = sp.x; wd = sp.d;
         }
         else if (/cent(er|re)|middle/.test(l)) tx = W / 2;
