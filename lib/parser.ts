@@ -368,6 +368,32 @@ export function parseScript(
     px[who] = tx; pdepth[who] = td;
     return end;
   };
+
+    // a walk into or out of the picture goes round the furniture too: split it at the corners it has to pass
+  const viaSplit = (who: number, act: Action, sx: number, sd: number) => {
+    if (act.moveTo === undefined) return;
+    const ex = act.moveTo, ed = act.toDepth ?? sd;
+    const via = route(sx, sd, ex, ed, []);
+    if (!via.length) return;
+    const pts = [...via, { x: ex, d: ed }];
+    const lens: number[] = []; let ax = sx, ad = sd;
+    for (const q of pts) { lens.push(Math.max(0.01, Math.hypot((q.x - ax) / 150, (q.d - ad) * 8))); ax = q.x; ad = q.d; }
+    const total = lens.reduce((a, b) => a + b, 0), dur = act.t1 - act.t0;
+    const chain: Action[] = []; let tt = act.t0;
+    pts.forEach((q, i) => {
+      const dd = (dur * lens[i]) / total;
+      chain.push({
+        t0: tt, t1: tt + dd, clip: act.clip, moveTo: q.x, toDepth: q.d, ease: [i === 0 ? 0.15 : 0, i === pts.length - 1 ? 0.15 : 0],
+        ...(i === 0 ? { fromX: act.fromX, fromDepth: act.fromDepth, enter: act.enter } : {}),
+        ...(i === pts.length - 1 ? { exit: act.exit } : {}),
+      });
+      tt += dd;
+    });
+    const list = actors[who].actions, idx = list.indexOf(act);
+    list.splice(idx, 1, ...chain);
+    if (act.say || act.expr || act.look || act.view || act.nod || act.shake)
+      list.push({ t0: act.t0, t1: act.t1, say: act.say, expr: act.expr, look: act.look, view: act.view, nod: act.nod, shake: act.shake });
+  };
   const placeProp = (pi: number, x: number, d: number, lift: number, t: number) => {
     props[pi].actions.push({ t0: t, t1: t, moveTo: x, toDepth: d, lift });
     pxp[pi] = x; pdepthP[pi] = d;
@@ -842,6 +868,9 @@ export function parseScript(
 
       // coming in from, or going out of, the picture
       const walkDur = frontIn || frontOut ? 2.2 : cl(Math.abs(tx - (fromX ?? cur)) / (run ? 300 : 130), 0.6, 20);
+      const startD0 = pdepth[who];
+
+      
       px[who] = tx; pdepth[who] = wd;
       const mv = { moveTo: tx, fromX, fromDepth: fromD, toDepth: wd, enter: enter || undefined, exit: exit || undefined };
       if (gesture && !parallelWalk) {
@@ -849,14 +878,19 @@ export function parseScript(
         if (exit && !enter) {
           me.actions.push({ t0: t, t1: t + gd, clip: gesture, say, expr, look, view, nod, shake });
           me.actions.push({ t0: t + gd, t1: t + gd + walkDur, clip: gait, ...mv });
+          viaSplit(who, me.actions[me.actions.length - 1], fromX ?? cur, startD0);
         } else {
           me.actions.push({ t0: t, t1: t + walkDur, clip: gait, expr, look, view, ...mv });
+          viaSplit(who, me.actions[me.actions.length - 1], fromX ?? cur, startD0);
+
+          
           me.actions.push({ t0: t + walkDur, t1: t + walkDur + gd, clip: gesture, say, nod, shake });
         }
         return t + walkDur + gd;
       }
       const dur = Math.max(walkDur, base, sayDur);
       me.actions.push({ t0: t, t1: t + dur, clip: parallelWalk && other ? other : gait, say, expr, look, view, nod, shake, ...mv });
+      viaSplit(who, me.actions[me.actions.length - 1], fromX ?? cur, startD0);
       return t + dur;
     }
 
