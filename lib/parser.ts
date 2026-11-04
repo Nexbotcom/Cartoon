@@ -158,11 +158,13 @@ export function parseScript(
     return { x: pxp[pi] + dir * (halfWidth * 150 + 52), d: pdepthP[pi] };
   };
       // shortest walk around the furniture: a graph of the corners of every solid piece, searched for the shortest clear path
+  let routeOk = true;                                 // false when the last route() found no way round
   const route = (x0: number, d0: number, x1: number, d1: number, ignore: number[]): { x: number; d: number }[] => {
     const A: P = { X: (x0 - 640) / 150, Z: -d0 * 8 }, B: P = { X: (x1 - 640) / 150, Z: -d1 * 8 };
     const rects: Rect[] = [];
     props.forEach((_, i) => { if (!ignore.includes(i)) { const r = rectOf(i); if (r) rects.push(r); } });
     const blocked = (a: P, b: P) => rects.some(r => segHits(a, b, r));
+    routeOk = true;
     if (!blocked(A, B)) return [];
     const nodes: P[] = [A, B];
     for (const r of rects) for (const X of [r.minX - 0.05, r.maxX + 0.05]) for (const Z of [r.minZ - 0.05, r.maxZ + 0.05]) {
