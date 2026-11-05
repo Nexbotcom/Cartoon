@@ -34,6 +34,7 @@ export interface Pose {
 
 export interface Action {
   t0: number; t1: number;
+  gesture?: "clap" | "dance" | "hug" | "five";   // hug and high five (with a partner), clap and dance (alone)
   use?: "drink" | "eat" | "read"; shake?: boolean; turnHold?: boolean;   // using a prop, shaking hands, a turn that lasts
   seat?: number; turn?: number; sx?: number; sd?: number; sh?: number; lx?: number; ld?: number; lh?: number;   // sitting, lying, turning 
   clip?: ClipId; expr?: Expr; say?: string; moveTo?: number;
@@ -72,4 +73,4 @@ export interface SceneProp extends PropMember { actions: Action[]; holds: Hold[]
 export interface CamKey { t: number; x: number; y: number; zoom: number; follow?: number; az?: number; el?: number }
 // A 360 / orbit camera move. Only used by the 3D mode, and only where the script asks for it.
 export interface Shot3D { t0: number; t1: number; deg: number; target?: number }
-export interface Scene { duration: number; actors: Actor[]; props: SceneProp[]; cam: CamKey[]; shots: Shot3D[]; warnings: string[]; notes?: string[] }
+export interface Scene { duration: number; actors: Actor[]; props: SceneProp[]; cam: CamKey[]; shots: Shot3D[]; warnings: string[]; notes?: string[]; lights?: { t: number; on: boolean; ramp: number }[] }
