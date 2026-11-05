@@ -32,6 +32,10 @@ const EAT = /\b(eat|eats|eating|bite|bites|biting|munch|munches)\b/;
 const READ = /\b(read|reads|reading)\b/;
 const SHAKE = /\b(shake|shakes|shaking)\s+hands?\b|\bhandshake\b/;
 const MEET = /\b(meet|meets|gather|gathers|huddle|huddles|come together|comes together|get together)\b/;
+const HUG = /\b(hug|hugs|hugging|embrace|embraces)\b/;
+const FIVE = /\bhigh[- ]?fives?\b/;
+const CLAP = /\b(clap|claps|clapping|applaud|applauds|applauding)\b/;
+const DANCE = /\b(dance|dances|dancing|boogie|boogies)\b/;
 const KICK = /\b(kick|kicks|kicking|shoot|shoots|shooting|strike|strikes|boot|boots)\b/;
 const SIT = /\b(sit|sits|sitting|seated)\b|\btakes? a seat\b/;
 const STAND = /\b(stands?|standing|gets? up|rises?)\b/;
@@ -107,6 +111,7 @@ export function parseScript(
   const posOf = (i: number) => (i >= 1000 ? pxp[i - 1000] : px[i]);
   const cam: CamKey[] = [{ t: 0, x: W / 2, y: H / 2, zoom: 1 }];
   const shots: Shot3D[] = [];
+  const lights: { t: number; on: boolean; ramp: number }[] = [];
   const warnings: string[] = [];
   const warn = (m: string) => { if (!warnings.includes(m)) warnings.push(m); };
   const notes: string[] = [];
@@ -120,6 +125,7 @@ export function parseScript(
   const rideCar: number[] = actors.map(() => -1);
   let beatEnd = 0, prevStart = 0, maxT = 0;
   let curEveryone = false;                                         // is the current line an "Everyone:" line?
+  let lightEndT = 0, prevWasLight = false;                         // light lines follow each other
   const meetCache = new Map<string, Record<number, { x: number; d: number; deg: number }>>();
 
   const findNames = (l: string, skip: number) => matchIdx(l, actors.map(a => a.def.name), skip);
@@ -623,6 +629,36 @@ export function parseScript(
       t += 0.35 + dur; moveDone = true;
     }
 
+        // ----- hug and high five: walk up close, face each other, and do it together -----
+    if (!moveDone && (HUG.test(l) || FIVE.test(l)) && others.length) {
+      const kindP: "hug" | "five" = HUG.test(l) ? "hug" : "five";
+      const tg = others[0], GAP = kindP === "hug" ? 0.4 : 0.8;
+      const cxm = (px[tg] - 640) / 150, czm = -pdepth[tg] * 8, sxm = (px[who] - 640) / 150, szm = -pdepth[who] * 8;
+      let ux = sxm - cxm, uz = szm - czm;
+      const ul = Math.hypot(ux, uz);
+      if (ul < 0.05) { ux = 1; uz = 0; } else { ux /= ul; uz /= ul; }
+      const gx = Math.round(640 + (cxm + ux * GAP) * 150), gd = cl(-(czm + uz * GAP) / 8, -0.9, 1.4);
+      t = walkTo(who, gx, gd, t, run, []);
+      const degMe = (Math.atan2(-ux, -uz) * 180) / Math.PI, degThem = (Math.atan2(ux, uz) * 180) / Math.PI;
+      me.actions.push({ t0: t, t1: t + 0.35, turn: degMe, turnHold: true });
+      actors[tg].actions.push({ t0: t, t1: t + 0.35, turn: degThem, turnHold: true });
+      const dur = base || (kindP === "hug" ? 3.2 : 1.5);
+      me.actions.push({ t0: t + 0.35, t1: t + 0.35 + dur, gesture: kindP, expr: expr ?? "happy", say });
+      actors[tg].actions.push({ t0: t + 0.35, t1: t + 0.35 + dur, gesture: kindP, expr: "happy" });
+      t += 0.35 + dur; moveDone = true;
+    }
+
+    // ----- clap and dance (alone, or "Everyone: dance") -----
+    if (!moveDone && (CLAP.test(l) || DANCE.test(l))) {
+      const kind2: "clap" | "dance" = CLAP.test(l) ? "clap" : "dance";
+      if (kind2 === "dance") t = leaveSeat(who, t);
+      const dur = base || (kind2 === "clap" ? 3 : 5);
+      me.actions.push({ t0: t, t1: t + dur, gesture: kind2, expr: expr ?? "happy", say });
+      t += dur; moveDone = true;
+    }
+
+    // ----- everyone meets: walk to a ring around the middle and face each other -----
+
     // ----- everyone meets: walk to a ring around the middle and face each other -----
     if (!moveDone && MEET.test(l) && curEveryone && actors.length > 1) {
       const key = seg + "@" + t0.toFixed(2);
@@ -1048,16 +1084,38 @@ export function parseScript(
     return t0 + dur;
   };
 
+    // ---------- one step of a light line: "Lights: off", "Lights: on", "Lights: off for 3 seconds", "Lights: flicker" ----------
+  const lightSeg = (seg: string, t0: number): number => {
+    const l = seg.toLowerCase();
+    const explicit = l.match(/(\d+(?:\.\d+)?)\s*(?:s\b|sec)/)?.[1];
+    const ramp = /\b(slow|slowly|gradual|gradually|fade)\b/.test(l) ? 1.5 : 0.12;
+    if (/\b(flicker|flickers|blink|strobe)\b/.test(l)) {
+      const n = explicit ? Math.max(2, Math.round(+explicit / 0.3)) : 6;
+      for (let i = 0; i < n; i++) lights.push({ t: t0 + i * 0.15, on: i % 2 === 1, ramp: 0.05 });
+      lights.push({ t: t0 + n * 0.15, on: true, ramp: 0.05 });
+      return t0 + n * 0.15 + 0.1;
+    }
+    const off = /\b(off|out|dark|darkness|dim)\b/.test(l), on = /\b(on|up|bright)\b/.test(l);
+    if (off && !on) {
+      lights.push({ t: t0, on: false, ramp });
+      if (explicit) { lights.push({ t: t0 + +explicit, on: true, ramp }); return t0 + +explicit + ramp; }
+      return t0 + ramp;
+    }
+    if (on) { lights.push({ t: t0, on: true, ramp }); return t0 + ramp; }
+    return t0;
+  };
+
   for (const rawLine of text.split(/\n+/)) {
     let line = rawLine.trim();
     if (!line) continue;
     let parallel = false;
     if (/^[&+]/.test(line)) { parallel = true; line = line.replace(/^[&+]\s*/, ""); }
     const m = line.match(/^([^:"]{1,30}):\s*(.*)$/);
-    let who = -1, pwho = -1, isCam = false, everyone = false, body = line;
+    let who = -1, pwho = -1, isCam = false, isLight = false, everyone = false, body = line;
     if (m) {
       const nm = m[1].trim().toLowerCase();
       if (nm === "camera" || nm === "cam") { isCam = true; body = m[2]; }
+      else if (nm === "light" || nm === "lights") { isLight = true; body = m[2]; }
       else if (EVERY.test(nm) && !actors.some(a => a.def.name.toLowerCase() === nm)) { everyone = true; body = m[2]; }
       else {
         const i = actors.findIndex(a => a.def.name.toLowerCase() === nm);
@@ -1068,11 +1126,11 @@ export function parseScript(
         }
       }
     }
-    if (!isCam && !everyone && who < 0 && pwho < 0) { if (!actors.length) continue; who = 0; }
+    if (!isCam && !isLight && !everyone && who < 0 && pwho < 0) { if (!actors.length) continue; who = 0; }
     if (/\b(meanwhile|at the same time|simultaneously)\b/i.test(body.replace(/"[^"]*"/g, " "))) parallel = true;
 
-    const free = isCam || pwho >= 0;   // camera and prop lines run alongside the previous line
-    const start = parallel || free ? prevStart : beatEnd;
+    const free = isCam || isLight || pwho >= 0;   // camera and prop lines run alongside the previous line
+    const start = isLight && prevWasLight ? Math.max(prevStart, lightEndT) : parallel || free ? prevStart : beatEnd;
     if (!parallel && !free) prevStart = start;
     const segs = splitSegs(body);
     const run = (idx: number) => {
@@ -1080,7 +1138,7 @@ export function parseScript(
       for (const seg of segs) {
         const wm = seg.match(/^(?:wait|pause|hold)\D*(\d+(?:\.\d+)?)/i);
         if (wm) { tl += +wm[1]; continue; }
-        tl = isCam ? camSeg(seg, tl) : pwho >= 0 ? propSeg(pwho, seg, tl) : actorSeg(idx, seg, tl);
+        tl = isCam ? camSeg(seg, tl) : isLight ? lightSeg(seg, tl) : pwho >= 0 ? propSeg(pwho, seg, tl) : actorSeg(idx, seg, tl);
       }
       return tl;
     };
@@ -1090,11 +1148,12 @@ export function parseScript(
     else tl = run(who);
     maxT = Math.max(maxT, tl);
     if (!free) beatEnd = Math.max(beatEnd, tl);
+    prevWasLight = isLight; if (isLight) lightEndT = tl;
   }
 
   for (const a of actors) for (const k of a.keys) maxT = Math.max(maxT, k.t1);
   const total = Math.max(maxT, beatEnd) + 0.6;
   rideOpen.forEach(r => { if (r) r.t1 = total; });   // anyone still in a car stays there to the end
   cam.sort((a, b) => a.t - b.t);
-  return { duration: total, actors, props, cam, shots, warnings, notes };
+  return { duration: total, actors, props, cam, shots, warnings, notes, lights: lights.sort((a, b) => a.t - b.t) };
 }
