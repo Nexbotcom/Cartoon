@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { CharacterDef, Scene, ThemeId } from "./types";
-import { FOOT, H, W, actorState, camAt, drawBubble, posAt, propPlace, smoothPose, visibleAt } from "./engine";
+import { FOOT, H, W, actorState, camAt, drawBubble, lightAt, posAt, propPlace, smoothPose, visibleAt } from "./engine";
 import { AnimIn, D, TAU, cl, lerp, makeKit, sm } from "./kit3d";
 import { Env, buildEnv } from "./env3d";
 import { RiderHead, buildProp3D } from "./props3d";
@@ -605,7 +605,19 @@ export function createRenderer3D(): Renderer3D {
       if (Hd.kind === "shake") arm(rig.armR, rig.elR, -0.83 - 0.04 * Hd.beat, -0.44, -0.23, -1.01 + 0.09 * Hd.beat);
       else if (Hd.kind === "drink") arm(rig.armR, rig.elR, -0.64, -0.59, -0.25, -2.31);
       else if (Hd.kind === "eat") arm(rig.armR, rig.elR, -0.85, -0.59, -0.25, -2.3);
-      else { arm(rig.armR, rig.elR, -0.26, -0.14, -0.21, -1.93); arm(rig.armL, rig.elL, -0.26, 0.14, 0.21, -1.93); }
+
+      else if (Hd.kind === "read") { arm(rig.armR, rig.elR, -0.26, -0.14, -0.21, -1.93); arm(rig.armL, rig.elL, -0.26, 0.14, 0.21, -1.93); }
+      else if (Hd.kind === "hug") {                          // both arms around the other person's back, with a gentle squeeze
+        arm(rig.armR, rig.elR, -0.73, -0.14, -0.21, -1.30 + 0.05 * Hd.beat);
+        arm(rig.armL, rig.elL, -0.64, 0.13, 0.21, -1.23 + 0.05 * Hd.beat);
+      }
+      else if (Hd.kind === "five") arm(rig.armR, rig.elR, -1.79, -0.44, -0.23, -1.03 + 0.12 * Hd.beat);   // hand up, with a slap
+      else if (Hd.kind === "clap") {                         // hands apart, then together, over and over
+        const o = 1 - Hd.beat;
+        arm(rig.armR, rig.elR, lerp(-0.28, -0.08, o), lerp(-0.46, -0.15, o), lerp(-0.23, 0.45, o), lerp(-1.78, -2.19, o));
+        arm(rig.armL, rig.elL, lerp(-0.28, -0.08, o), lerp(0.46, 0.15, o), lerp(0.23, -0.45, o), lerp(-1.78, -2.19, o));
+      }
+      else if (Hd.kind === "dance") { rig.body.rotation.z += 0.07 * Hd.w * Hd.beat; rig.body.position.y -= 0.02 * Hd.w * Math.abs(Hd.beat); }
     }
 
     const setLeg = (lg: THREE.Group, kn: THREE.Group, aU: number, aB: number, sgn: number) => {
@@ -743,6 +755,10 @@ export function createRenderer3D(): Renderer3D {
     const jump = Math.abs(t - lastT) > 0.25 || dt > 0.25;
     lastT = t; dt = cl(dt, 0, 0.1);
     e.anim(t, dt, o.alive);
+    // lights on / off: dim the sun and the room light (lamps and the TV keep their own glow)
+    const fl = 0.1 + 0.9 * (o.editor ? 1 : lightAt(s, t));
+    hemi.intensity = e.light.hemi[2] * fl;
+    sun.intensity = (e.light.sun ? e.light.sun.intensity : 0.5) * fl;
 
     const talkers: { x: number; y: number; z: number; say: string }[] = [];
     const sits: number[] = [];
