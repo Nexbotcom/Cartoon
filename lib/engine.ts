@@ -324,7 +324,7 @@ export function actorState(s: Scene, a: Actor, t: number) {
 
     // handshake, drinking, eating, reading: how far the hand is raised (w) and the rhythm of the movement (beat)
   const ez2 = (x: number) => sm(cl(x, 0, 1));
-  let hand: { kind: "shake" | "drink" | "eat" | "read"; w: number; beat: number } | undefined;
+  let hand: { kind: "shake" | "drink" | "eat" | "read" | "hug" | "five" | "clap" | "dance"; w: number; beat: number } | undefined;
   const shakeA = act.find(q => q.shake);
   const useA = act.find(q => q.use);
   if (shakeA) {
@@ -349,8 +349,42 @@ export function actorState(s: Scene, a: Actor, t: number) {
       pose.pitch += 16 * w; pose.eyeY = Math.max(pose.eyeY, 0.8 * w);
     }
   }
-  const view: View = clip === "type" ? "front" : hand?.kind === "shake" ? "side" : sideNow ? (depthWalk ? (mz > 0 ? "front" : "back") : "side") : viewA ?? "front";
+
+
+
+
+
+    // hug, high five, clap, dance
+  const gestA = act.find(q => q.gesture);
+  if (gestA && gestA.gesture && !hand) {
+    const g = gestA.gesture, u = (t - gestA.t0) / Math.max(0.01, gestA.t1 - gestA.t0);
+    const w = ez2(u / 0.15) * (1 - ez2((u - 0.85) / 0.15));
+    if (g === "hug") {
+      hand = { kind: "hug", w, beat: Math.sin((t - gestA.t0) * 3) * w };
+      pose.aRU = lerp(pose.aRU, 70, w); pose.aLU = lerp(pose.aLU, 70, w); pose.aRB = lerp(pose.aRB, 30, w); pose.aLB = lerp(pose.aLB, 30, w);
+      pose.yaw += 28 * w; pose.lean += 5 * w;
+    } else if (g === "five") {
+      hand = { kind: "five", w, beat: Math.exp(-Math.pow((u - 0.5) * 9, 2)) };
+      pose.aRU = lerp(pose.aRU, 150, w); pose.aRB = lerp(pose.aRB, 10, w);
+    } else if (g === "clap") {
+      const beat = 0.5 + 0.5 * Math.sin((t - gestA.t0) * 11);
+      hand = { kind: "clap", w, beat };
+      pose.aLU = lerp(pose.aLU, 32, w); pose.aRU = lerp(pose.aRU, 32, w);
+      pose.aLB = lerp(pose.aLB, -55 - 15 * beat, w); pose.aRB = lerp(pose.aRB, -55 - 15 * beat, w);
+    } else {
+      const ds = Math.sin(t * 6), dc = Math.cos(t * 6);
+      hand = { kind: "dance", w, beat: ds };
+      const D2: Partial<Pose> = { aLU: 100 + 50 * ds, aRU: 100 - 50 * ds, aLB: 40, aRB: 40, lLU: 6 * ds, lRU: -6 * ds, lLB: 18 * Math.max(0, ds), lRB: 18 * Math.max(0, -ds), bob: -Math.abs(dc) * 14, tilt: 6 * ds, lean: 3 };
+      for (const key of Object.keys(D2) as (keyof Pose)[]) pose[key] = lerp(pose[key], D2[key] as number, w);
+      pose.yaw += 12 * ds * w;
+    }
+  }
+  const view: View = clip === "type" ? "front" : hand && (hand.kind === "shake" || hand.kind === "hug" || hand.kind === "five") ? "side" : sideNow ? (depthWalk ? (mz > 0 ? "front" : "back") : "side") : viewA ?? "front";
   // people who come in from, or leave toward, the camera fade in and out
+
+
+
+  
   let alpha = 1;
   for (const q of a.actions) {
     if (q.enter && q.fromDepth !== undefined && q.fromDepth < 0 && t >= q.t0) alpha = Math.min(alpha, sm(cl((t - q.t0) / 0.5, 0, 1)));
@@ -391,6 +425,20 @@ export function propPlace(s: Scene, p: SceneProp, t: number) {
 
 const entity = (s: Scene, i: number | undefined): Mover | undefined =>
   i === undefined ? undefined : i >= 1000 ? s.props[i - 1000] : s.actors[i];
+
+// 1 = the lights are on, 0 = off (with a quick or slow fade, as the script says)
+export function lightAt(s: Scene, t: number): number {
+  const ks = s.lights;
+  if (!ks || !ks.length) return 1;
+  let from = 1, val = 1;
+  for (const k of ks) {
+    if (t < k.t) break;
+    const to = k.on ? 1 : 0;
+    val = lerp(from, to, sm(cl((t - k.t) / Math.max(0.01, k.ramp), 0, 1)));
+    from = to;
+  }
+  return val;
+}
 
 export function camAt(s: Scene, t: number) {
   const k = s.cam; let i = 0;
@@ -637,5 +685,7 @@ export function renderFrame(c: CanvasRenderingContext2D, s: Scene, t: number, op
     if (opts.bubbles !== false) for (const q of talkers) drawBubble(c, q.say, q.x, q.y);
   });
   if (th.fg) layer(c, th.fg, cam);
+  const lv = lightAt(s, t);
+  if (lv < 0.995) { c.fillStyle = `rgba(6,10,32,${(0.72 * (1 - lv)).toFixed(3)})`; c.fillRect(-W, -H, 3 * W, 3 * H); }
   c.restore();
 }
