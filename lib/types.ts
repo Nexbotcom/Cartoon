@@ -1,5 +1,5 @@
 export type StyleId = "stick" | "flat" | "anime" | "sketch";
-export type Expr = "neutral" | "happy" | "sad" | "angry" | "surprised";
+export type Expr = "neutral" | "happy" | "sad" | "angry" | "surprised" | "scared" | "laughing" | "crying" | "sleepy" | "confused" | "shy";
 export type ClipId = "idle" | "walk" | "run" | "wave" | "talk" | "type" | "jump" | "point" | "shrug" | "kick";
 export type View = "front" | "side" | "back";
 export type ThemeId =
