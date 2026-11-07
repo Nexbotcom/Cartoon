@@ -46,6 +46,9 @@ const DANCE = /\b(dance|dances|dancing|boogie|boogies)\b/;
 const THINK = /\b(think|thinks|thinking|wonder|wonders|dream|dreams)\b/;
 const WHISPER = /\b(whisper|whispers|whispering)\b/;
 const SHOUT = /\b(shout|shouts|shouting|yell|yells|yelling|scream|screams|screaming)\b/;
+const FALL = /\b(fall|falls|falling|trip|trips|tripping|slip|slips|slipping|stumble|stumbles|collapse|collapses|faint|faints|fainting)\b/;
+const HIDE = /\b(hide|hides|hiding)\b/;
+const KNOCK = /\b(knock|knocks|knocking)\b/;
 const KICK = /\b(kick|kicks|kicking|shoot|shoots|shooting|strike|strikes|boot|boots)\b/;
 const SIT = /\b(sit|sits|sitting|seated)\b|\btakes? a seat\b/;
 const STAND = /\b(stands?|standing|gets? up|rises?)\b/;
@@ -129,6 +132,7 @@ export function parseScript(
   const seatSlot: number[] = actors.map(() => -1);
   const seatOcc: Record<number, (number | undefined)[]> = {};
   const lyingOn: boolean[] = actors.map(() => false);
+  const fallen: boolean[] = actors.map(() => false);               // lying on the floor after a fall
   const lyingBed: number[] = actors.map(() => -1);
   const holdingOf: ({ pi: number; hold: Hold } | undefined)[] = actors.map(() => undefined);
   const rideOpen: (Action | undefined)[] = actors.map(() => undefined);
@@ -330,8 +334,14 @@ export function parseScript(
     return -1;
   };
 
-  // ---------- small building blocks ----------
+  // ---------- small building blocks ---------
   const leaveSeat = (who: number, t: number): number => {
+    if (fallen[who]) {                                  // get up off the floor first
+      fallen[who] = false;
+      actors[who].actions.push({ t0: t, t1: t + 1.3, fall: "up" });
+      return t + 1.3;
+    }
+        
     if (lyingOn[who]) {
       lyingOn[who] = false; lyingBed[who] = -1;
       actors[who].actions.push({ t0: t, t1: t + 4.0, posture: "stand" });     // sit up, sit on the edge, then stand
@@ -551,6 +561,54 @@ export function parseScript(
         me.actions.push({ t0: t + 0.35, t1: t + 0.35 + dur, clip: run ? "run" : "walk", moveTo: tx, fromX: dx, fromDepth: dd, toDepth: td, enter: true, expr, look, view });
         px[who] = tx; pdepth[who] = td;
         t += 0.35 + dur; moveDone = true;
+      }
+    }
+
+
+        // ----- get up after a fall -----
+    if (!moveDone && fallen[who] && STAND.test(l)) { t = leaveSeat(who, t); moveDone = true; }
+
+    // ----- fall down (and stay down until they get up) -----
+    if (!moveDone && FALL.test(l) && !/fall(s|ing)? asleep/.test(l)) {
+      t = leaveSeat(who, t);
+      const dir = /trip|forward|face|stumble/.test(l) ? 1 : -1;       // forward onto the face, or backward onto the back
+      me.actions.push({ t0: t, t1: t + 1.1, fall: "down", fallDir: dir, expr: expr ?? "surprised" });
+      fallen[who] = true;
+      t += 1.1; moveDone = true;
+    }
+
+    // ----- hide behind a prop: walk round to the far side of it -----
+    if (!moveDone && HIDE.test(l) && propHits.length) {
+      const pi2 = propHits[0], h2 = half(pi2) ?? [0.3, 0.3];
+      const gd2 = cl(-(-pdepthP[pi2] * 8 - (h2[1] + 0.45)) / 8, -0.9, 1.4);
+      const spot = freeGoal(Math.round(pxp[pi2]), gd2);
+      t = walkTo(who, spot.x, spot.d, t, run || /\b(quick|quickly|fast|hurr\w*)\b/.test(l), []);
+      me.actions.push({ t0: t, t1: t + 0.6, turn: 0, turnHold: true, expr: expr ?? "scared" });
+      t += 0.6; moveDone = true;
+    }
+
+    // ----- knock on a door: stand in front of it and knock three times -----
+    if (!moveDone && KNOCK.test(l)) {
+      let di: number | undefined = propHits.find(i => props[i].kind === "door");
+      if (di === undefined) {
+        let best = 1e9;
+        for (let i = 0; i < props.length; i++) {
+          if (props[i].kind !== "door") continue;
+          const dd = Math.abs(pxp[i] - px[who]);
+          if (dd < best) { best = dd; di = i; }
+        }
+      }
+      if (di === undefined) warn(`${me.def.name} cannot knock: there is no Door on stage.`);
+      else {
+        t = leaveSeat(who, t);
+        let spot = localPt(di, 0, 0.58 * props[di].scale);
+        if (keepOut(spot.x, spot.d, di)) spot = reachSpot(who, di);
+        t = walkTo(who, spot.x, spot.d, t, run, []);
+        const dxm = (pxp[di] - spot.x) / 150, dzm = -(pdepthP[di] - spot.d) * 8;
+        me.actions.push({ t0: t, t1: t + 0.4, turn: (Math.atan2(dxm, dzm) * 180) / Math.PI, turnHold: true });
+        const dur = base || 1.8;
+        me.actions.push({ t0: t + 0.4, t1: t + 0.4 + dur, gesture: "knock", expr });
+        t += 0.4 + dur; moveDone = true;
       }
     }
 
