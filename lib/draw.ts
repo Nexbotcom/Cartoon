@@ -281,8 +281,15 @@ export function drawActor(
   };
 
   const eye = (ex: number, ey: number, ws: number, bias: number) => {
-    const open = 1 - cl(p.blink, 0, 1);
-    const sur = expr === "surprised" ? 1.25 : 1;
+    const open = (1 - cl(p.blink, 0, 1)) * (expr === "sleepy" ? 0.4 : expr === "crying" ? 0.6 : 1);
+    if (expr === "crying") {                                   // two tears per eye running down the cheek
+      for (let k = 0; k < 2; k++) {
+        const ph = ((((o.seed ?? 0) % 8) / 8) + k * 0.5) % 1;
+        c.globalAlpha = 1 - ph; c.fillStyle = "#6fc3ff"; c.beginPath();
+        c.ellipse(ex + (ex < 0 ? -1 : 1) * hr * 0.04 * ph, ey + hr * (0.18 + 0.5 * ph), hr * 0.04, hr * 0.065, 0, 0, TAU); c.fill(); c.globalAlpha = 1;
+      }
+    }
+    const sur = expr === "surprised" || expr === "scared" ? 1.25 : 1;
     const ix = cl(p.eyeX + bias, -1, 1), iy = cl(p.eyeY, -1, 1);
     if (L.eyeKind === "dot") {
       c.fillStyle = ink; c.beginPath();
@@ -292,7 +299,7 @@ export function drawActor(
     const anime = L.eyeKind === "anime";
     const rx = hr * (anime ? 0.2 : 0.17) * sur * ws;
     const ry = hr * (anime ? 0.27 : 0.19) * sur * Math.max(0.08, open);
-    if (expr === "happy") {
+    if (expr === "happy" || expr === "laughing") {
       c.beginPath(); c.arc(ex, ey + hr * 0.07, rx * 0.9, Math.PI * 1.1, Math.PI * 1.9);
       c.strokeStyle = ink; c.lineWidth = hr * 0.07; c.stroke(); return;
     }
@@ -313,8 +320,8 @@ export function drawActor(
   };
 
   const brow = (ex: number, s: number) => {
-    const oy = expr === "angry" ? -0.08 : expr === "sad" ? 0.06 : expr === "surprised" ? -0.2 : expr === "happy" ? -0.06 : 0;
-    const iy = expr === "angry" ? 0.1 : expr === "sad" ? -0.14 : expr === "surprised" ? -0.2 : expr === "happy" ? -0.06 : 0;
+    const oy = ({ angry: -0.08, sad: 0.06, surprised: -0.2, happy: -0.06, scared: -0.04, crying: 0.08, laughing: -0.1, shy: 0.05, sleepy: 0.05, confused: s > 0 ? -0.2 : 0.03 } as Record<string, number>)[expr] ?? 0;
+    const iy = ({ angry: 0.1, sad: -0.14, surprised: -0.2, happy: -0.06, scared: -0.2, crying: -0.16, laughing: -0.1, shy: -0.06, sleepy: 0.05, confused: s > 0 ? -0.2 : 0.03 } as Record<string, number>)[expr] ?? 0;
     const by = -hr * 0.28;
     c.beginPath(); c.moveTo(ex + s * hr * 0.2, by + oy * hr); c.lineTo(ex - s * hr * 0.2, by + iy * hr);
     c.strokeStyle = L.mono || L.stick ? ink : dk(d.hair, 0.75);
@@ -340,9 +347,10 @@ export function drawActor(
       c.restore(); mp(); c.stroke(); return;
     }
     c.beginPath();
-    if (expr === "happy") c.arc(mx, my - hr * 0.1, w1 * 0.28, Math.PI * 0.12, Math.PI * 0.88);
+    if (expr === "happy" || expr === "shy") c.arc(mx, my - hr * 0.1, w1 * 0.28, Math.PI * 0.12, Math.PI * 0.88);
     else if (expr === "sad") c.arc(mx, my + hr * 0.22, w1 * 0.22, Math.PI * 1.15, Math.PI * 1.85);
     else if (expr === "angry") { c.moveTo(mx - w1 * 0.2, my + hr * 0.04); c.quadraticCurveTo(mx, my - hr * 0.06, mx + w1 * 0.2, my + hr * 0.04); }
+    else if (expr === "confused") { c.moveTo(mx - w1 * 0.18, my); c.quadraticCurveTo(mx - w1 * 0.06, my - hr * 0.07, mx, my); c.quadraticCurveTo(mx + w1 * 0.06, my + hr * 0.07, mx + w1 * 0.18, my); }
     else { c.moveTo(mx - w1 * 0.15, my); c.quadraticCurveTo(mx, my + hr * 0.05, mx + w1 * 0.15, my); }
     c.stroke();
   };
@@ -364,7 +372,7 @@ export function drawActor(
     }
     c.save(); c.translate(fx, py);
     if (!L.stick && !L.mono) {
-      c.fillStyle = "rgba(255,110,120,0.22)";
+      c.fillStyle = expr === "shy" ? "rgba(255,90,110,0.5)" : "rgba(255,110,120,0.22)";
       for (const s of [-1, 1]) { c.beginPath(); c.ellipse(s * hr * 0.62 * sc, hr * 0.36, hr * 0.17, hr * 0.1, 0, 0, TAU); c.fill(); }
     }
     const ex = hr * 0.42 * sc;
