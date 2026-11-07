@@ -658,6 +658,10 @@ export function createRenderer3D(): Renderer3D {
         arm(rig.armR, rig.elR, lerp(-0.28, -0.08, o), lerp(-0.46, -0.15, o), lerp(-0.23, 0.45, o), lerp(-1.78, -2.19, o));
         arm(rig.armL, rig.elL, lerp(-0.28, -0.08, o), lerp(0.46, 0.15, o), lerp(0.23, -0.45, o), lerp(-1.78, -2.19, o));
       }
+      else if (Hd.kind === "knock") {                        // a fist drawn back, then out to the door, three times
+        const kb = Hd.beat;
+        arm(rig.armR, rig.elR, lerp(-0.15, -0.85, kb), lerp(-0.41, -0.13, kb), lerp(-0.04, -0.21, kb), lerp(-2.08, -1.21, kb));
+      }
       else if (Hd.kind === "dance") { rig.body.rotation.z += 0.07 * Hd.w * Hd.beat; rig.body.position.y -= 0.02 * Hd.w * Math.abs(Hd.beat); }
     }
 
