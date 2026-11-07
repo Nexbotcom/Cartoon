@@ -350,11 +350,16 @@ export function actorState(s: Scene, a: Actor, t: number) {
     }
   }
 
+    // body language that goes with the feeling (the face is drawn by the renderers)
+  if (expr === "scared") { pose.tilt += Math.sin(t * 40) * 1.2; pose.bob += Math.sin(t * 37) * 1.5; pose.lean -= 4; pose.pitch += 3; pose.mouth = Math.max(pose.mouth, 0.3); }
+  else if (expr === "laughing") { pose.lean += 4 * Math.sin(t * 9); pose.bob -= Math.abs(Math.sin(t * 9)) * 6; pose.pitch -= 8; pose.mouth = Math.max(pose.mouth, 0.75 + 0.25 * Math.sin(t * 14)); }
+  else if (expr === "crying") { pose.pitch += 10; pose.lean += 6; pose.bob -= Math.abs(Math.sin(t * 6)) * 3; pose.mouth = Math.max(pose.mouth, 0.5 + 0.15 * Math.sin(t * 6)); }
+  else if (expr === "sleepy") { pose.pitch += 12 + 6 * Math.sin(t * 0.8); pose.lean += 4; pose.tilt += 5 * Math.sin(t * 0.6); pose.mouth = Math.max(pose.mouth, 0.16 + 0.07 * Math.sin(t * 1.6)); }
+  else if (expr === "confused") { pose.tilt += 12; pose.yaw += 8 * Math.sin(t * 1.2); }
+  else if (expr === "shy") { pose.pitch += 10; pose.tilt += 6; pose.lean += 3; pose.eyeY = Math.max(pose.eyeY, 0.7); pose.eyeX -= 0.4; }
 
+  // hug, high five, clap, dance
 
-
-
-    // hug, high five, clap, dance
   const gestA = act.find(q => q.gesture);
   if (gestA && gestA.gesture && !hand) {
     const g = gestA.gesture, u = (t - gestA.t0) / Math.max(0.01, gestA.t1 - gestA.t0);
