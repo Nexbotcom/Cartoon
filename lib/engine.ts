@@ -411,7 +411,7 @@ export function actorState(s: Scene, a: Actor, t: number) {
   }
   return { x: outX, depth: outD, face, view, clip, expr, say, pose, lookEx, moving, holding, alpha, seatRot, heading, walking: sideNow, depthWalk, gaitT, oneHand,
     faceHeading, faceYaw: faceHeading !== undefined && !lookA ? cl(fdx / 8, -38, 38) : 0, rest,
-    slide: 0, seatIdx: undefined as number | undefined, clipT: curAct ? t - curAct.t0 : 99, hand };
+    slide: 0, seatIdx: undefined as number | undefined, clipT: curAct ? t - curAct.t0 : 99, hand, bubble };
 }
 
 // where a prop is right now (it follows whoever is carrying it)
@@ -614,6 +614,71 @@ function layer(c: CanvasRenderingContext2D, L: Layer, cam: { x: number; y: numbe
 }
 
 export function drawBubble(c: CanvasRenderingContext2D, text: string, x: number, y: number) {
+  if (text.charCodeAt(0) !== 1) { drawBubbleSay(c, text, x, y); return; }   // plain speech
+  const kind = text[1], body = text.slice(2);
+  c.save();
+  if (kind === "m") {                                        // a "!" or "?" that pops up over the head
+    const [sym, us] = body.split("|"), u = Math.min(1, Math.max(0, +us || 0));
+    const pop = u < 0.2 ? 0.4 + 3 * u : 1 + 0.12 * Math.sin(u * 14) * (1 - u);
+    c.translate(x, y - 34 - 10 * Math.sin(Math.min(1, u * 4) * Math.PI));
+    c.textAlign = "center"; c.textBaseline = "middle";
+    c.font = `800 ${Math.round(70 * pop)}px system-ui, sans-serif`;
+    c.lineJoin = "round"; c.lineWidth = 10; c.strokeStyle = "#1a1a2e";
+    c.strokeText(sym, 0, 0);
+    c.fillStyle = sym.includes("!") ? "#ffd23f" : "#4db3ff"; c.fillText(sym, 0, 0);
+    c.restore(); return;
+  }
+  const shout = kind === "s", whisper = kind === "w", think = kind === "t";
+  const fs = shout ? 34 : whisper ? 19 : 24;
+  c.font = `${think ? "italic " : ""}${shout ? 800 : 600} ${fs}px system-ui, sans-serif`;
+  c.textAlign = "center"; c.textBaseline = "middle";
+  const words = (shout ? body.toUpperCase() : body).split(/\s+/);
+  const maxW = shout ? 380 : 320, lines: string[] = []; let cur = "";
+  for (const w of words) {
+    const test = cur ? cur + " " + w : w;
+    if (c.measureText(test).width > maxW && cur) { lines.push(cur); cur = w; } else cur = test;
+  }
+  if (cur) lines.push(cur);
+  const lh = fs * 1.25, bw = Math.max(...lines.map(l => c.measureText(l).width)) + 36, bh = lines.length * lh + 22;
+  const bx = x - bw / 2, by = y - 22 - bh;
+  c.lineJoin = "round"; c.strokeStyle = "#1a1a2e";
+  let ink = "#1a1a2e";
+  if (shout) {                                               // a jagged burst
+    const cx = x, cy = by + bh / 2, rx = bw / 2 + 20, ry = bh / 2 + 16, n = 18;
+    c.beginPath();
+    for (let i = 0; i < n * 2; i++) {
+      const a = (i / (n * 2)) * Math.PI * 2, k = i % 2 ? 1 : 1.22;
+      const px = cx + Math.cos(a) * rx * k, py = cy + Math.sin(a) * ry * k;
+      if (i) c.lineTo(px, py); else c.moveTo(px, py);
+    }
+    c.closePath(); c.fillStyle = "#fff3b0"; c.lineWidth = 4; c.fill(); c.stroke();
+    ink = "#9b1c1c";
+  } else if (think) {                                        // a cloud, with little bubbles leading down to the head
+    c.fillStyle = "#ffffff"; c.lineWidth = 3;
+    const r = 13, nx = Math.max(3, Math.round(bw / 26)), ny = Math.max(2, Math.round(bh / 26));
+    const pts: [number, number][] = [];
+    for (let i = 0; i <= nx; i++) pts.push([bx + (bw * i) / nx, by], [bx + (bw * i) / nx, by + bh]);
+    for (let j = 1; j < ny; j++) pts.push([bx, by + (bh * j) / ny], [bx + bw, by + (bh * j) / ny]);
+    for (const [px, py] of pts) { c.beginPath(); c.arc(px, py, r, 0, Math.PI * 2); c.fill(); c.stroke(); }
+    c.fillRect(bx - 1, by - 1, bw + 2, bh + 2);
+    for (const [tx, ty, tr] of [[x + 8, y - 17, 7], [x + 4, y - 9, 5], [x, y - 3, 3.5]] as const) { c.beginPath(); c.arc(tx, ty, tr, 0, Math.PI * 2); c.fill(); c.stroke(); }
+  } else {                                                   // a quiet bubble: dashed and light
+    const rr = 16;
+    c.fillStyle = "rgba(255,255,255,0.92)"; c.lineWidth = 2.5;
+    if (whisper) c.setLineDash([6, 5]);
+    c.beginPath(); c.moveTo(bx + rr, by);
+    c.arcTo(bx + bw, by, bx + bw, by + bh, rr); c.arcTo(bx + bw, by + bh, bx, by + bh, rr);
+    c.arcTo(bx, by + bh, bx, by, rr); c.arcTo(bx, by, bx + bw, by, rr); c.closePath(); c.fill(); c.stroke();
+    c.beginPath(); c.moveTo(x - 8, by + bh); c.lineTo(x, y - 4); c.lineTo(x + 8, by + bh); c.stroke();
+    c.setLineDash([]);
+    ink = "#5a5f73";
+  }
+  c.fillStyle = ink;
+  lines.forEach((l, k) => c.fillText(l, x, by + 11 + lh * (k + 0.5)));
+  c.restore();
+}
+
+function drawBubbleSay(c: CanvasRenderingContext2D, text: string, x: number, y: number) {
   c.save();
   c.font = "600 24px system-ui, sans-serif"; c.textAlign = "center"; c.textBaseline = "middle";
   const maxW = 320, lines: string[] = []; let cur = "";
@@ -691,7 +756,7 @@ export function renderFrame(c: CanvasRenderingContext2D, s: Scene, t: number, op
       const pose = smoothPose("2d" + ai, { ...base, yaw: base.yaw + st.faceYaw }, t);
       items.push({ depth: st.depth, order: 1, draw: () => withAlpha(c, st.alpha, () => drawActor(c, a.def, pose, st.expr, st.x, fy, sc,
         { view: st.view, face: st.face, seed: Math.floor(t * 8), prop: st.clip === "type" ? "laptop" : undefined })) });
-      if (st.say) talkers.push({ x: st.x, y: fy - a.def.height * sc * 1.02 - 10, say: st.say });
+      if (st.bubble) talkers.push({ x: st.x, y: fy - a.def.height * sc * 1.02 - 10, say: st.bubble });
     });
     items.sort((a, b) => b.depth - a.depth || a.order - b.order);
     for (const it of items) it.draw();
