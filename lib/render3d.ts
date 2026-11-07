@@ -823,7 +823,7 @@ export function createRenderer3D(): Renderer3D {
       const R2 = st.rest;
       beats[i] = st.hand?.kind === "drink" ? st.hand.beat : 0;
       if (R2?.seatIdx !== undefined && R2.slideM > 0) slides[R2.seatIdx] = Math.max(slides[R2.seatIdx] ?? 0, R2.slideM);
-      if (st.say) talkers.push({ x: toX(st.x), y: 1.86 * rig.s, z: toZ(st.depth), say: st.say });
+      if (st.bubble) talkers.push({ x: toX(st.x), y: 1.86 * rig.s, z: toZ(st.depth), say: st.bubble });
     });
 
     s.props.forEach((p, i) => {
