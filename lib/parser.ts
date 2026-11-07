@@ -43,6 +43,9 @@ const HUG = /\b(hug|hugs|hugging|embrace|embraces)\b/;
 const FIVE = /\bhigh[- ]?fives?\b/;
 const CLAP = /\b(clap|claps|clapping|applaud|applauds|applauding)\b/;
 const DANCE = /\b(dance|dances|dancing|boogie|boogies)\b/;
+const THINK = /\b(think|thinks|thinking|wonder|wonders|dream|dreams)\b/;
+const WHISPER = /\b(whisper|whispers|whispering)\b/;
+const SHOUT = /\b(shout|shouts|shouting|yell|yells|yelling|scream|screams|screaming)\b/;
 const KICK = /\b(kick|kicks|kicking|shoot|shoots|shooting|strike|strikes|boot|boots)\b/;
 const SIT = /\b(sit|sits|sitting|seated)\b|\btakes? a seat\b/;
 const STAND = /\b(stands?|standing|gets? up|rises?)\b/;
@@ -461,6 +464,11 @@ export function parseScript(
     
     const explicit = l.match(/(\d+(?:\.\d+)?)\s*(?:s\b|sec)/)?.[1];
     const base = explicit ? +explicit : 0;
+    // a thought is shown in a thought bubble (not spoken); a quote made only of ! and ? pops up over the head
+    const thinkM = THINK.test(l) ? quoted : undefined;
+    const markM = quoted && /^[!?]{1,3}$/.test(quoted.trim()) ? quoted.trim() : undefined;
+    if (thinkM || markM) say = undefined;
+    
     const expr = EXPR.find(([r]) => r.test(l))?.[1];
     const others = findNames(l, who);
     const propHits = findProps(l);
@@ -814,6 +822,13 @@ export function parseScript(
       }
     }
 
+    // ----- a thought bubble, or a ! / ? popping up over the head -----
+    if (!moveDone && (thinkM || markM)) {
+      const dur = base || (markM ? 1.4 : Math.max(2, sayTime(thinkM)));
+      me.actions.push({ t0: t, t1: t + dur, think: markM ? undefined : thinkM, mark: markM, expr, look, view });
+      t += dur; moveDone = true;
+    }
+
     // ----- ordinary actions -----
     const exit = !moveDone && EXIT.test(l), enter = !moveDone && ENTER.test(l);
     const carryWalk = !moveDone && /\b(carry|carries|bring|brings|take|takes)\b/.test(l) && others.length > 0 && !GIVE.test(l);
@@ -1091,6 +1106,18 @@ export function parseScript(
     return t0 + dur;
   };
 
+
+
+    // quiet or loud speech: mark the spoken lines this step created
+  const speakSeg = (idx: number, seg: string, tl: number): number => {
+    const n0 = actors[idx].actions.length;
+    const r = actorSeg(idx, seg, tl);
+    const plain = seg.replace(/"[^"]*"/g, " ").toLowerCase();
+    const vs: "whisper" | "shout" | undefined = WHISPER.test(plain) ? "whisper" : SHOUT.test(plain) ? "shout" : undefined;
+    if (vs) for (let k = n0; k < actors[idx].actions.length; k++) if (actors[idx].actions[k].say) actors[idx].actions[k].voice = vs;
+    return r;
+  };
+
     // ---------- one step of a light line: "Lights: off", "Lights: on", "Lights: off for 3 seconds", "Lights: flicker" ----------
   const lightSeg = (seg: string, t0: number): number => {
     const l = seg.toLowerCase();
@@ -1145,7 +1172,7 @@ export function parseScript(
       for (const seg of segs) {
         const wm = seg.match(/^(?:wait|pause|hold)\D*(\d+(?:\.\d+)?)/i);
         if (wm) { tl += +wm[1]; continue; }
-        tl = isCam ? camSeg(seg, tl) : isLight ? lightSeg(seg, tl) : pwho >= 0 ? propSeg(pwho, seg, tl) : actorSeg(idx, seg, tl);
+        tl = isCam ? camSeg(seg, tl) : isLight ? lightSeg(seg, tl) : pwho >= 0 ? propSeg(pwho, seg, tl) : : speakSeg(idx, seg, tl);
       }
       return tl;
     };
