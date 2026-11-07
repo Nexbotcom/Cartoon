@@ -3,6 +3,13 @@ import { FOOT, H, W } from "./engine";
 import { FOOTPRINT, FRONT_KINDS, SEATS, SOLID, SURFACE } from "./props";
 
 const EXPR: [RegExp, Expr][] = [
+  [/scared|afraid|frighten|terrified|\bfear|panic|petrified/, "scared"],
+  [/laugh|giggl|cackl|crack up|chuckl|\blol\b/, "laughing"],
+  [/\bcry\b|cries|crying|\bsob|weep|in tears/, "crying"],
+  [/sleepy|tired|drowsy|yawn|exhausted/, "sleepy"],
+  [/confus|puzzl|baffled|perplex/, "confused"],
+  [/\bshy\b|bashful|embarrass|blush|timid/, "shy"],
+
   [/smil|happy|laugh|cheer|excited|grin/, "happy"],
   [/\bsad|cry|upset|disappoint/, "sad"],
   [/angry|\bmad\b|furious|annoyed/, "angry"],
