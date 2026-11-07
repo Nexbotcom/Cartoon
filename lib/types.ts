@@ -34,8 +34,9 @@ export interface Pose {
 
 export interface Action {
   t0: number; t1: number;
+  fall?: "down" | "up"; fallDir?: number;   // falling over (forward = 1, backward = -1) and getting up
   think?: string; mark?: string; voice?: "whisper" | "shout";   // a thought bubble, a ! or ? popup, quiet or loud speech
-  gesture?: "clap" | "dance" | "hug" | "five";   // hug and high five (with a partner), clap and dance (alone)
+  gesture?: "clap" | "dance" | "hug" | "five" | "knock";   // hug and high five (with a partner), clap and dance (alone)
   use?: "drink" | "eat" | "read"; shake?: boolean; turnHold?: boolean;   // using a prop, shaking hands, a turn that lasts
   seat?: number; turn?: number; sx?: number; sd?: number; sh?: number; lx?: number; ld?: number; lh?: number;   // sitting, lying, turning 
   clip?: ClipId; expr?: Expr; say?: string; moveTo?: number;
