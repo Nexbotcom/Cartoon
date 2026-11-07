@@ -466,7 +466,48 @@ export function createRenderer3D(): Renderer3D {
 
     // ---------- cartoon extras: smooth expressions, and skirts / long hair / buns that lag behind and swing ----------
   const faceMem = new WeakMap<Rig, { happy: number; sad: number; angry: number; surprised: number }>();
+
+
+    const faceMem2 = new WeakMap<Rig, Record<"happy" | "sad" | "angry" | "surprised" | "scared" | "laughing" | "crying" | "sleepy" | "confused" | "shy", number>>();
   const faceState = (rig: Rig, expr: string, dt: number) => {
+    let f = faceMem2.get(rig);
+    if (!f) { f = { happy: 0, sad: 0, angry: 0, surprised: 0, scared: 0, laughing: 0, crying: 0, sleepy: 0, confused: 0, shy: 0 }; faceMem2.set(rig, f); }
+    const kk = 1 - Math.exp(-dt * 9);
+    for (const key of Object.keys(f) as (keyof typeof f)[]) f[key] += ((expr === key ? 1 : 0) - f[key]) * kk;
+    return f;
+  };
+  // tears (crying) and blushing cheeks (shy, happy, laughing), added to the face the first time they are needed
+  const fxFace = new WeakMap<Rig, { tears: THREE.Mesh[]; blush: THREE.Mesh[] }>();
+  const onHead = (x: number, y: number) => 0.12 * Math.sqrt(Math.max(0.05, 1 - (x / 0.105) ** 2 - (y / 0.138) ** 2)) + 0.004;
+  const faceFx = (rig: Rig, fw: { crying: number; shy: number; happy: number; laughing: number }) => {
+    let f = fxFace.get(rig);
+    if (!f) {
+      const head = rig.neck.children.find(ch => ch.type === "Group");
+      if (!head) return;
+      const tears: THREE.Mesh[] = [], blush: THREE.Mesh[] = [];
+      for (const sx of [-1, 1]) {
+        for (let k = 0; k < 2; k++) {
+          const m = new THREE.Mesh(new THREE.SphereGeometry(0.011, 8, 8), new THREE.MeshBasicMaterial({ color: 0x6fc3ff, transparent: true }));
+          m.scale.set(1, 1.5, 1); m.visible = false; m.userData.sx = sx; m.userData.k = k; head.add(m); tears.push(m);
+        }
+        const b = new THREE.Mesh(new THREE.CircleGeometry(0.028, 16), new THREE.MeshBasicMaterial({ color: 0xff6f8a, transparent: true, opacity: 0, depthWrite: false }));
+        b.position.set(sx * 0.07, -0.03, onHead(0.07, -0.03)); b.rotation.y = sx * 0.55; b.visible = false; head.add(b); blush.push(b);
+      }
+      f = { tears, blush }; fxFace.set(rig, f);
+    }
+    f.tears.forEach(m => {
+      const ph = (lastT * 1.1 + m.userData.k * 0.5) % 1, x = m.userData.sx * (0.046 + 0.01 * ph), y = -0.01 - 0.075 * ph;
+      m.visible = fw.crying > 0.3;
+      m.position.set(x, y, onHead(x, y));
+      (m.material as THREE.MeshBasicMaterial).opacity = (1 - ph) * Math.min(1, fw.crying * 1.5);
+    });
+    f.blush.forEach(b => {
+      const mat = b.material as THREE.MeshBasicMaterial;
+      mat.opacity = 0.55 * fw.shy + 0.18 * fw.happy + 0.2 * fw.laughing;
+      b.visible = mat.opacity > 0.02;
+    });
+  };
+  const faceStateOld = (rig: Rig, expr: string, dt: number) => {
     let f = faceMem.get(rig);
     if (!f) { f = { happy: 0, sad: 0, angry: 0, surprised: 0 }; faceMem.set(rig, f); }
     const kk = 1 - Math.exp(-dt * 9);
@@ -647,19 +688,19 @@ export function createRenderer3D(): Renderer3D {
     const talking = open > 0.12;
     rig.mOpen.visible = talking;
     rig.mOpen.scale.set(1.3, 0.3 + open * 1.2, 0.4);
-    rig.mSmile.visible = !talking && st.expr === "happy";
+    rig.mSmile.visible = !talking && (st.expr === "happy" || st.expr === "shy");
     rig.mFrown.visible = !talking && (st.expr === "sad" || st.expr === "angry");
     rig.mFlat.visible = !talking && !rig.mSmile.visible && !rig.mFrown.visible;
     const fw = faceState(rig, st.expr, dt);                 // expressions fade in and out instead of snapping
     rig.brows.forEach((br, i) => {
       const s = i === 0 ? -1 : 1;
-      br.rotation.z = s * (0.4 * fw.angry - 0.4 * fw.sad); br.scale.set(1.15, 1.5, 1);
-      br.position.y = 0.052 + 0.016 * fw.surprised + 0.006 * fw.happy + 0.004 * fw.sad - 0.004 * fw.angry;
+      br.rotation.z = s * (0.4 * fw.angry - 0.4 * fw.sad - 0.35 * fw.scared - 0.3 * fw.crying - 0.12 * fw.shy) + (i === 0 ? 0.3 : -0.12) * fw.confused; br.scale.set(1.15, 1.5, 1);
+      br.position.y = 0.052 + 0.016 * fw.surprised + 0.006 * fw.happy + 0.004 * fw.sad - 0.004 * fw.angry + 0.014 * fw.scared + (i === 0 ? 0.016 : -0.004) * fw.confused - 0.007 * fw.sleepy + 0.003 * fw.shy;
     });
     rig.eyes.forEach(e => {
-      e.g.scale.set(1.15 + 0.15 * fw.surprised, Math.max(0.08, (1 - 0.82 * fw.happy - 0.2 * fw.angry - 0.15 * fw.sad) * (1 + 0.25 * fw.surprised) * (1 - p.blink)), 1);
+      e.g.scale.set(1.15 + 0.15 * fw.surprised + 0.1 * fw.scared, Math.max(0.08, (1 - 0.82 * fw.happy - 0.82 * fw.laughing - 0.6 * fw.crying - 0.62 * fw.sleepy - 0.2 * fw.angry - 0.15 * fw.sad - 0.1 * fw.shy) * (1 + 0.25 * fw.surprised + 0.2 * fw.scared) * (1 - p.blink)), 1);
       e.pup.position.set(p.eyeX * 0.009, -p.eyeY * 0.007, 0);
-      e.pup.scale.setScalar(1 + 0.18 * fw.happy - 0.25 * fw.surprised);
+      e.pup.scale.setScalar(1 + 0.18 * fw.happy + 0.1 * fw.crying - 0.25 * fw.surprised - 0.3 * fw.scared);
     });
     rig.laptop.visible = clip === "type";
     follow(rig, st, dt);
