@@ -146,7 +146,7 @@ export function scheduleVoices(sc: Scene, voiceOf: (actorIndex: number) => strin
         src.playbackRate.value = 0.95; src.connect(f); f.connect(g); g.connect(out);
       } else if (q.voice === "shout") {             // loud and harsh: more volume, pushed hard, a touch faster
         const g = ctx.createGain(); g.gain.value = 1.9;
-        const sh = ctx.createWaveShaper(); sh.curve = shoutCurve(); sh.oversample = "2x";
+        const sh = ctx.createWaveShaper(); sh.curve = new Float32Array(shoutCurve()); sh.oversample = "2x";
         src.playbackRate.value = 1.06; src.connect(sh); sh.connect(g); g.connect(out);
       } else src.connect(out);
       src.start(start + q.t0);
