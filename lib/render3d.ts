@@ -704,6 +704,7 @@ export function createRenderer3D(): Renderer3D {
     });
     rig.laptop.visible = clip === "type";
     follow(rig, st, dt);
+    faceFx(rig, fw);
   };
 
   // ---------- director camera: angle, zoom up to 10x, and steady 360 orbits ----------
