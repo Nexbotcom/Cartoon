@@ -396,7 +396,15 @@ export function actorState(s: Scene, a: Actor, t: number) {
     if (q.exit && (q.toDepth ?? 0) < 0 && t >= q.t0 && t < q.t1) alpha = Math.min(alpha, 1 - sm(cl((t - (q.t1 - 0.5)) / 0.5, 0, 1)));
   }
 
-    let outX = restX, outD = restD;
+    // what appears above the head: speech (quiet or loud), a thought, or a ! / ? mark
+  const spA = act.find(q => q.say), thA = act.find(q => q.think), mkA = act.find(q => q.mark);
+  const bubble: string | undefined = say
+    ? (spA?.voice === "whisper" ? "\u0001w" + say : spA?.voice === "shout" ? "\u0001s" + say : say)
+    : thA ? "\u0001t" + thA.think
+    : mkA ? "\u0001m" + mkA.mark + "|" + ((t - mkA.t0) / Math.max(0.01, mkA.t1 - mkA.t0)).toFixed(2)
+    : undefined;
+  let outX = restX, outD = restD;
+
   if (!R && !a.actions.some(q => q.ride !== undefined && t >= q.t0 && t < q.t1)) {
     const [X, Z] = pushOut(s, t, (restX - 640) / 150, -restD * 8);
     outX = 640 + X * 150; outD = -Z / 8;
