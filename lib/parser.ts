@@ -1172,7 +1172,7 @@ export function parseScript(
       for (const seg of segs) {
         const wm = seg.match(/^(?:wait|pause|hold)\D*(\d+(?:\.\d+)?)/i);
         if (wm) { tl += +wm[1]; continue; }
-        tl = isCam ? camSeg(seg, tl) : isLight ? lightSeg(seg, tl) : pwho >= 0 ? propSeg(pwho, seg, tl) : : speakSeg(idx, seg, tl);
+        tl = isCam ? camSeg(seg, tl) : isLight ? lightSeg(seg, tl) : pwho >= 0 ? propSeg(pwho, seg, tl) : speakSeg(idx, seg, tl);
       }
       return tl;
     };
