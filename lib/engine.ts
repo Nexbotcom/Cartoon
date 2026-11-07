@@ -237,7 +237,26 @@ export function actorState(s: Scene, a: Actor, t: number) {
     const thigh = (hl < 0.88 ? Math.acos(cl((hl - 0.45) / 0.43, -1, 1)) : 0) * (1 - R.lgw);
     rest = { hipY: hy, thigh, tw: R.tw, yaw: sa + (Math.PI / 2) * R.yw, sw: R.sw, slideM, seatIdx: A.seat };
   }
+  
+    // falling down (forward or backward) and getting up again
+  let fallLast: Action | undefined;
+  for (const q of a.actions) if (q.t0 <= t && q.fall) fallLast = q;
+  let fallW = 0;
+  if (fallLast && !R && !moving) {
+    const ezf = (x: number) => sm(cl(x, 0, 1));
+    const u = t - fallLast.t0, dir = fallLast.fallDir ?? -1;
+    fallW = fallLast.fall === "down" ? ezf(u / 0.6 - 0.35) : 1 - ezf(u / 1.3);
+    if (fallW > 0.001) {
+      const bounce = fallLast.fall === "down" ? 0.04 * sc * Math.exp(-Math.pow((u - 0.85) * 9, 2)) : 0;
+      rest = { hipY: lerp(hs, 0.13 * sc, fallW) + bounce, thigh: 0, tw: -dir * fallW, yaw: 0, sw: 0, slideM: 0 };
+      const fl = Math.sin(Math.PI * fallW);                  // arms flail while going over, then lie out to the sides
+      pose.aLU = lerp(pose.aLU, 130 + 35 * Math.sin(t * 16), fl); pose.aRU = lerp(pose.aRU, 130 + 35 * Math.sin(t * 16 + 2), fl);
+      pose.aLB = lerp(pose.aLB, 30, fl); pose.aRB = lerp(pose.aRB, 30, fl);
+      pose.aLU = lerp(pose.aLU, 35, fallW * fallW); pose.aRU = lerp(pose.aRU, 35, fallW * fallW);
+    }
+  }
   if (lie > 0) pose.lie = lie;
+  if (fallW > 0.001) pose.lie = Math.max(pose.lie, fallW);
   if (sit > 0) {
     pose.sit = sit;
     for (const k of ["lLU", "lRU", "lLB", "lRB"] as const) pose[k] = lerp(pose[k], 90, sit);
@@ -324,7 +343,7 @@ export function actorState(s: Scene, a: Actor, t: number) {
 
     // handshake, drinking, eating, reading: how far the hand is raised (w) and the rhythm of the movement (beat)
   const ez2 = (x: number) => sm(cl(x, 0, 1));
-  let hand: { kind: "shake" | "drink" | "eat" | "read" | "hug" | "five" | "clap" | "dance"; w: number; beat: number } | undefined;
+  let hand: { kind: "shake" | "drink" | "eat" | "read" | "hug" | "five" | "clap" | "dance" | "knock"; w: number; beat: number } | undefined;
   const shakeA = act.find(q => q.shake);
   const useA = act.find(q => q.use);
   if (shakeA) {
@@ -371,6 +390,10 @@ export function actorState(s: Scene, a: Actor, t: number) {
     } else if (g === "five") {
       hand = { kind: "five", w, beat: Math.exp(-Math.pow((u - 0.5) * 9, 2)) };
       pose.aRU = lerp(pose.aRU, 150, w); pose.aRB = lerp(pose.aRB, 10, w);
+    } else if (g === "knock") {
+      const kk = (u * 3) % 1;
+      hand = { kind: "knock", w, beat: Math.pow(Math.sin(Math.PI * Math.min(1, kk * 1.4)), 2) };     // three knocks
+      pose.aRU = lerp(pose.aRU, 80, w); pose.aRB = lerp(pose.aRB, 70, w);
     } else if (g === "clap") {
       const beat = 0.5 + 0.5 * Math.sin((t - gestA.t0) * 11);
       hand = { kind: "clap", w, beat };
