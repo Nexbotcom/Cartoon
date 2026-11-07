@@ -117,6 +117,16 @@ export async function prepareLines(lines: Line[], cb: {
   return { ...durCache };
 }
 
+// the "shout" sound: the voice is pushed hard so it clips a little, like a real shout
+let shoutC: Float32Array | null = null;
+function shoutCurve(): Float32Array {
+  if (!shoutC) {
+    shoutC = new Float32Array(1024);
+    for (let i = 0; i < 1024; i++) { const x = i / 511.5 - 1; shoutC[i] = Math.tanh(x * 2.2) / Math.tanh(2.2); }
+  }
+  return shoutC;
+}
+
 // plays every spoken line at the moment it happens; returns a function that stops them all
 export function scheduleVoices(sc: Scene, voiceOf: (actorIndex: number) => string, lead: number): () => void {
   const { ac: ctx, master: out } = audio();
@@ -130,7 +140,15 @@ export function scheduleVoices(sc: Scene, voiceOf: (actorIndex: number) => strin
       if (!buf) continue;
       const src = ctx.createBufferSource();
       src.buffer = buf;
-      src.connect(out);
+        if (q.voice === "whisper") {                  // quiet and breathy: less volume, a softer top end, a touch slower
+        const g = ctx.createGain(); g.gain.value = 0.38;
+        const f = ctx.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = 2600;
+        src.playbackRate.value = 0.95; src.connect(f); f.connect(g); g.connect(out);
+      } else if (q.voice === "shout") {             // loud and harsh: more volume, pushed hard, a touch faster
+        const g = ctx.createGain(); g.gain.value = 1.9;
+        const sh = ctx.createWaveShaper(); sh.curve = shoutCurve(); sh.oversample = "2x";
+        src.playbackRate.value = 1.06; src.connect(sh); sh.connect(g); g.connect(out);
+      } else src.connect(out);
       src.start(start + q.t0);
       nodes.push(src);
     }
