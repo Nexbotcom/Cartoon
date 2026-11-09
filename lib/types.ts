@@ -10,7 +10,7 @@ export type PropKind =
   | "tv" | "door" | "bed" | "tree" | "bench" | "streetlight" | "car"
   | "box" | "cake" | "bag" | "ball" | "goal" | "board"
   | "wardrobe" | "fridge" | "counter" | "rug" | "picture" | "clock" | "window"
-  | "curtains" | "fan" | "locker" | "bin" | "bush" | "fence" | "crowd" | "ivstand" | "phone" | "cup" | "book" | "apple";
+  | "curtains" | "fan" | "locker" | "bin" | "bush" | "fence" | "crowd" | "ivstand" | "phone" | "cup" | "book" | "apple" | "umbrella" | "pizza" | "flower" | "candle" | "mirror" | "suitcase" | "key" | "letter";
 
 export interface CharacterDef {
   id: string; name: string; style: StyleId;
@@ -36,7 +36,7 @@ export interface Action {
   t0: number; t1: number;
   fall?: "down" | "up"; fallDir?: number;   // falling over (forward = 1, backward = -1) and getting up
   think?: string; mark?: string; voice?: "whisper" | "shout";   // a thought bubble, a ! or ? popup, quiet or loud speech
-  gesture?: "clap" | "dance" | "hug" | "five" | "knock";   // hug and high five (with a partner), clap and dance (alone)
+  gesture?: "clap" | "dance" | "hug" | "five" | "knock" | "unlock";   // hug and high five (with a partner), clap and dance (alone)
   use?: "drink" | "eat" | "read"; shake?: boolean; turnHold?: boolean;   // using a prop, shaking hands, a turn that lasts
   seat?: number; turn?: number; sx?: number; sd?: number; sh?: number; lx?: number; ld?: number; lh?: number;   // sitting, lying, turning 
   clip?: ClipId; expr?: Expr; say?: string; moveTo?: number;
