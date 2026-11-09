@@ -148,6 +148,72 @@ export function buildProp3D(k: Kit, kind: PropKind, color: string): THREE.Group 
       g.userData.riders = riders;
       break;
     }
+    case "umbrella": {
+      cyl(g, 0.011, 0.011, 0.82, "#3a2a1e", 0, 0.41, 0);
+      mesh(g, new THREE.TorusGeometry(0.03, 0.009, 8, 12, Math.PI), toon("#3a2a1e"), 0.03, 0, 0).rotation.z = Math.PI;
+      const can = new THREE.Group(); can.position.y = 0.84; g.add(can);
+      const cg = new THREE.ConeGeometry(0.5, 0.28, 16, 1, true); cg.translate(0, -0.14, 0);
+      const cm = new THREE.Mesh(cg, new THREE.MeshToonMaterial({ color: new THREE.Color(color), gradientMap: k.gm, side: THREE.DoubleSide }));
+      cm.castShadow = true; can.add(cm);
+      anims.push(a => { const o = a.open; can.scale.set(0.13 + 0.87 * o, 2.2 - 1.2 * o, 0.13 + 0.87 * o); });
+      break;
+    }
+    case "pizza": {
+      const slice = new THREE.Group(); slice.position.z = -0.16; g.add(slice);
+      mesh(slice, new THREE.CylinderGeometry(0.165, 0.165, 0.026, 16, 1, false, -0.3, 0.6), toon("#d99a3d"), 0, 0.013, 0);
+      mesh(slice, new THREE.CylinderGeometry(0.15, 0.15, 0.012, 16, 1, false, -0.29, 0.58), toon("#f6d26b"), 0, 0.031, 0);
+      for (const [px, pz] of [[0.0, 0.1], [0.03, 0.05], [-0.025, 0.06], [0.0, 0.135]]) cyl(slice, 0.018, 0.018, 0.008, "#c0392b", px, 0.039, pz);
+      break;
+    }
+    case "flower": {
+      cyl(g, 0.006, 0.006, 0.3, "#3f8a3a", 0, 0.15, 0);
+      sph(g, 0.03, "#ffd23f", 0, 0.31, 0.012, 1, 0.7, 1);
+      for (let i = 0; i < 6; i++) { const a = (i / 6) * TAU; sph(g, 0.03, color, Math.cos(a) * 0.036, 0.31 + Math.sin(a) * 0.036, 0, 1, 1, 0.5); }
+      sph(g, 0.04, "#4c9a43", 0.04, 0.12, 0, 1.8, 0.35, 0.8);
+      break;
+    }
+    case "candle": {
+      cyl(g, 0.022, 0.022, 0.14, color, 0, 0.07, 0);
+      cyl(g, 0.002, 0.002, 0.02, "#2a2a2a", 0, 0.15, 0);
+      const fm = emissiveMat("#ffb83a", 1.4);
+      const flame = mesh(g, new THREE.SphereGeometry(0.014, 10, 8), fm, 0, 0.172, 0);
+      const glowL = new THREE.PointLight(0xffb24a, 0.9, 4, 2); glowL.position.set(0, 0.2, 0); g.add(glowL);
+      anims.push(a => {
+        const on = a.power > 0.4, fl = 1 + 0.12 * Math.sin(a.t * 17) + 0.07 * Math.sin(a.t * 29);
+        flame.visible = on; flame.scale.set(1, 1.8 * fl, 1);
+        glowL.intensity = on ? 0.75 + 0.15 * Math.sin(a.t * 13) : 0;
+      });
+      break;
+    }
+    case "mirror": {
+      const m = new THREE.Group(); m.rotation.x = -0.06; g.add(m);
+      bx(m, 0.74, 1.62, 0.05, "#7a5c3e", 0, 0.9, 0);
+      const glass = k.tex(64, 256, c => { const gr = c.createLinearGradient(0, 0, 64, 256); gr.addColorStop(0, "#e6f6ff"); gr.addColorStop(1, "#a9cfe0"); c.fillStyle = gr; c.fillRect(0, 0, 64, 256); c.strokeStyle = "rgba(255,255,255,0.85)"; c.lineWidth = 7; c.beginPath(); c.moveTo(10, 40); c.lineTo(48, 120); c.moveTo(30, 30); c.lineTo(58, 80); c.stroke(); });
+      mesh(m, new THREE.PlaneGeometry(0.62, 1.5), new THREE.MeshBasicMaterial({ map: glass }), 0, 0.9, 0.03);
+      bx(g, 0.06, 0.08, 0.34, "#5d452e", -0.3, 0.04, -0.1); bx(g, 0.06, 0.08, 0.34, "#5d452e", 0.3, 0.04, -0.1);
+      break;
+    }
+    case "suitcase": {
+      bx(g, 0.5, 0.34, 0.18, color, 0, -0.27, 0);
+      bx(g, 0.5, 0.02, 0.185, dk(color, 0.7), 0, -0.27, 0);
+      bx(g, 0.2, 0.025, 0.03, "#2a2a2a", 0, -0.085, 0); bx(g, 0.02, 0.09, 0.03, "#2a2a2a", -0.1, -0.12, 0); bx(g, 0.02, 0.09, 0.03, "#2a2a2a", 0.1, -0.12, 0);
+      bx(g, 0.04, 0.035, 0.02, "#d6b25e", -0.15, -0.2, 0.095); bx(g, 0.04, 0.035, 0.02, "#d6b25e", 0.15, -0.2, 0.095);
+      for (const sx of [-0.2, 0.2]) cyl(g, 0.014, 0.014, 0.02, "#2a2a2a", sx, -0.45, 0.05);
+      break;
+    }
+    case "key": {
+      mesh(g, new THREE.TorusGeometry(0.022, 0.007, 8, 14), toon("#e0b93a"), 0, 0.03, 0);
+      cyl(g, 0.006, 0.006, 0.09, "#e0b93a", 0, -0.045, 0);
+      bx(g, 0.022, 0.01, 0.006, "#e0b93a", 0.012, -0.075, 0); bx(g, 0.016, 0.01, 0.006, "#e0b93a", 0.01, -0.058, 0);
+      break;
+    }
+    case "letter": {
+      bx(g, 0.2, 0.13, 0.008, color, 0, 0, 0);
+      const flap = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.07, 3), toon(dk(color, 0.92)));
+      flap.rotation.z = Math.PI; flap.scale.set(1, 1, 0.12); flap.position.set(0, 0.03, 0.006); g.add(flap);
+      mesh(g, new THREE.CylinderGeometry(0.012, 0.012, 0.004, 12), toon("#c0392b"), 0, 0.0, 0.012).rotation.x = Math.PI / 2;
+      break;
+    }
     case "cup":
       cyl(g, 0.04, 0.032, 0.09, color, 0, 0, 0);
       cyl(g, 0.036, 0.036, 0.004, "#6b4a2f", 0, 0.043, 0);
