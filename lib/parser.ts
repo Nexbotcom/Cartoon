@@ -33,7 +33,7 @@ const EXIT_SIDE = /(?:exit\w*|leave\w*|out|off|away)\b[^,.]*?\b(left|right)/;
 // seat heights (metres) and where the hips rest, measured from the 3D furniture
 const SEAT_TOP: Partial<Record<PropKind, number>> = { chair: 0.515, sofa: 0.52, bench: 0.45 };
 const SEAT_BACK: Partial<Record<PropKind, number>> = { chair: -0.08, sofa: -0.02, bench: -0.06 };
-const HOLDABLE: string[] = ["box", "cake", "bag", "ball", "phone", "cup", "book", "apple"];
+const HOLDABLE: string[] = ["box", "cake", "bag", "ball", "phone", "cup", "book", "apple", "pizza", "flower", "candle", "umbrella", "suitcase", "key", "letter"];
 const DRINK = /\b(drink|drinks|drinking|sip|sips|sipping)\b/;
 const EAT = /\b(eat|eats|eating|bite|bites|biting|munch|munches)\b/;
 const READ = /\b(read|reads|reading)\b/;
@@ -586,6 +586,24 @@ export function parseScript(
       me.actions.push({ t0: t, t1: t + 0.6, turn: 0, turnHold: true, expr: expr ?? "scared" });
       t += 0.6; moveDone = true;
     }
+        // ----- unlock a door with a key -----
+    if (!moveDone && /\b(unlock|unlocks|unlocking)\b/.test(l)) {
+      const di = propHits.find(i => props[i].kind === "door") ?? props.findIndex(q => q.kind === "door");
+      if (di === undefined || di < 0) warn(`${me.def.name} cannot unlock: there is no Door on stage.`);
+      else {
+        t = leaveSeat(who, t);
+        let spot = localPt(di, 0, 0.58 * props[di].scale);
+        if (keepOut(spot.x, spot.d, di)) spot = reachSpot(who, di);
+        t = walkTo(who, spot.x, spot.d, t, run, []);
+        const dxm = (pxp[di] - spot.x) / 150, dzm = -(pdepthP[di] - spot.d) * 8;
+        me.actions.push({ t0: t, t1: t + 0.4, turn: (Math.atan2(dxm, dzm) * 180) / Math.PI, turnHold: true });
+        me.actions.push({ t0: t + 0.4, t1: t + 1.8, gesture: "unlock", expr });
+        props[di].actions.push({ t0: t + 1.9, t1: t + 3.2, open: true });          // the door swings open
+        t += 2.2; moveDone = true;
+      }
+    }
+
+    // ----- knock on a door: stand in front of it and knock three times -----
 
     // ----- knock on a door: stand in front of it and knock three times -----
     if (!moveDone && KNOCK.test(l)) {
@@ -763,19 +781,43 @@ export function parseScript(
       }
     }
 
+        // ----- light a candle, blow it out, open or close an umbrella -----
+    if (!moveDone) {
+      const blow = /\bblow(s|ing)?\s+out\b|\bput(s|ting)?\s+out\b|\bsnuff/.test(l), lit = /\blight(s|ing)?\b/.test(l);
+      const ci2 = propHits.find(i => props[i].kind === "candle");
+      if (ci2 !== undefined && (blow || lit)) {
+        if (holdingOf[who]?.pi !== ci2) { const sp = reachSpot(who, ci2); t = walkTo(who, sp.x, sp.d, t, run, []); }
+        props[ci2].actions.push({ t0: t + 0.4, t1: t + 1.0, power: !blow });
+        me.actions.push({ t0: t, t1: t + 1.2, expr: blow ? "surprised" : "happy", look: props[ci2].name });
+        t += 1.2; moveDone = true;
+      }
+      const ui = moveDone ? undefined : propHits.find(i => props[i].kind === "umbrella");
+      if (ui !== undefined && /\b(open|opens|opening|put(s)? up|close|closes|closing|fold|folds)\b/.test(l)) {
+        const closing = /\b(close|closes|closing|fold|folds)\b/.test(l);
+        if (holdingOf[who]?.pi !== ui) {
+          if (holdingOf[who]) release(who, t, px[who] + 50, pdepth[who] - 0.002, 0);
+          t = pickUp(who, ui, t);
+        }
+        props[ui].actions.push({ t0: t, t1: t + 0.5, power: !closing });
+        t += 0.7; moveDone = true;
+      }
+    }
+
+    // ----- drink, eat, read -----
+
     // ----- drink, eat, read -----
     if (!moveDone) {
       const use: "drink" | "eat" | "read" | undefined = DRINK.test(l) ? "drink" : EAT.test(l) ? "eat" : READ.test(l) ? "read" : undefined;
       if (use) {
-        const want: PropKind = use === "drink" ? "cup" : use === "eat" ? "apple" : "book";
+        const wantKinds: PropKind[] = use === "drink" ? ["cup"] : use === "eat" ? ["apple", "pizza"] : ["book", "letter"];
         const nm = use === "drink" ? "Cup" : use === "eat" ? "Apple" : "Book";
         const hn0 = holdingOf[who];
-        let pi: number | undefined = propHits.find(i => props[i].kind === want);
+        let pi: number | undefined = propHits.find(i => wantKinds.includes(props[i].kind));
         if (pi === undefined && hn0) pi = hn0.pi;
         if (pi === undefined) {
           let best = 1e9;
           for (let i = 0; i < props.length; i++) {
-            if (props[i].kind !== want || props[i].holds.some(h => h.t1 > 1e8 && h.by !== who)) continue;
+            if (!wantKinds.includes(props[i].kind) || props[i].holds.some(h => h.t1 > 1e8 && h.by !== who)) continue;
             const dd = Math.abs(pxp[i] - px[who]);
             if (dd < best) { best = dd; pi = i; }
           }
