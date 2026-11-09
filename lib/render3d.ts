@@ -612,7 +612,10 @@ export function createRenderer3D(): Renderer3D {
     const setArm = (sh: THREE.Group, el: THREE.Group, aU: number, aB: number, sgn: number) => {
       sh.rotation.set(0, 0, 0); el.rotation.set(0, 0, 0);
       if (st.holding && (!st.oneHand || sgn > 0)) {
-        if (st.oneHand) { sh.rotation.set(-0.55, 0, 0.18); el.rotation.x = -1.75; }   // phone: one hand up in front
+      if (st.oneHand) {                                    // one hand: raised for a phone, cup, apple or pizza; lower and relaxed for the rest
+          const low = st.holdKind === "umbrella" ? [0.29, 0.27, -0.22, -1.49] : st.holdKind === "flower" ? [0.2, -0.04, -0.02, -1.87] : st.holdKind === "candle" || st.holdKind === "key" || st.holdKind === "letter" ? [-0.09, -0.25, -0.13, -1.88] : st.holdKind === "suitcase" ? [0.0, 0.0, -0.06, -0.15] : null;
+          if (low) { sh.rotation.set(low[0], low[1], low[2]); el.rotation.x = low[3]; } else { sh.rotation.set(-0.55, 0, 0.18); el.rotation.x = -1.75; }
+        }
         else { sh.rotation.set(-0.8, 0, sgn * 0.12); el.rotation.x = -1.15; }
         return;
       }
@@ -810,6 +813,7 @@ export function createRenderer3D(): Renderer3D {
     const sits: number[] = [];
     const slides: number[] = [];
     const beats: number[] = [];
+    const reading: boolean[] = [];
     s.actors.forEach((a, i) => {
       const rig = rigs[i];
       if (!rig) return;
@@ -826,6 +830,7 @@ export function createRenderer3D(): Renderer3D {
       sits[i] = st.pose.sit;
       const R2 = st.rest;
       beats[i] = st.hand?.kind === "drink" ? st.hand.beat : 0;
+      reading[i] = st.hand?.kind === "read" && st.hand.w > 0.05;
       if (R2?.seatIdx !== undefined && R2.slideM > 0) slides[R2.seatIdx] = Math.max(slides[R2.seatIdx] ?? 0, R2.slideM);
       if (st.bubble) talkers.push({ x: toX(st.x), y: 1.86 * rig.s, z: toZ(st.depth), say: st.bubble });
     });
@@ -841,14 +846,13 @@ export function createRenderer3D(): Renderer3D {
       const rotY = (p.rot ?? 0) * D;
       po.g.rotation.order = "YXZ"; po.g.rotation.set(0, 0, 0);
 
-
-      if (pl.held && holder && (p.kind === "cup" || p.kind === "apple")) {
+      if (pl.held && holder && (p.kind === "cup" || p.kind === "apple" || p.kind === "pizza" || p.kind === "flower" || p.kind === "candle" || p.kind === "umbrella" || p.kind === "suitcase" || p.kind === "key" || (p.kind === "letter" && !reading[pl.by]))) {
         // a cup or an apple sits in the right hand; the cup tips toward the mouth while drinking
         holder.root.updateMatrixWorld(true);
         tmpV.set(0, -0.09, 0); holder.handR.g.localToWorld(tmpV);
         po.g.position.copy(tmpV);
         po.g.rotation.set(-0.9 * (beats[pl.by] ?? 0), holder.angle, 0);
-      } else if (pl.held && holder && p.kind === "book") {
+      } else if (pl.held && holder && (p.kind === "book" || p.kind === "letter")) {
         // a book is held open in both hands, tilted up toward the reader's face
         holder.root.updateMatrixWorld(true);
         tmpV.set(0, -0.09, 0); holder.handR.g.localToWorld(tmpV);
