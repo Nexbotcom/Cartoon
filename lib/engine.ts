@@ -104,7 +104,7 @@ export function sitAt(a: { actions: Action[] }, t: number) {
 }
 
 // props that can be switched on/off or opened/closed by the script; the value is the starting state
-export const DEFAULT_POWER: Partial<Record<PropKind, boolean>> = { tv: true, lamp: true, fan: true, curtains: true, phone: true };
+export const DEFAULT_POWER: Partial<Record<PropKind, boolean>> = { tv: true, lamp: true, fan: true, curtains: true, phone: true, candle: true };
 export function powerAt(p: { actions: Action[] }, t: number, def: boolean) {
   let cur = def ? 1 : 0;
   for (const q of p.actions) {
@@ -265,7 +265,7 @@ export function actorState(s: Scene, a: Actor, t: number) {
   // carrying something: both arms hold it in front
   const holdP = ai >= 0 ? s.props.find(p => p.holds.some(h => h.by === ai && t >= h.t0 && t < h.t1)) : undefined;
   const holding = !!holdP;
-  const oneHand = holdP?.kind === "phone";
+  const oneHand = !!holdP && ["phone", "cup", "apple", "pizza", "flower", "candle", "umbrella", "suitcase", "key", "letter"].includes(holdP.kind);
   const sideNow = moving || clip === "walk" || clip === "run";
   if (holding && oneHand) {
     if (sideNow) { pose.aRU = 34; pose.aRB = 70; } else { pose.aRU = 30; pose.aRB = -70; }
@@ -390,6 +390,9 @@ export function actorState(s: Scene, a: Actor, t: number) {
     } else if (g === "five") {
       hand = { kind: "five", w, beat: Math.exp(-Math.pow((u - 0.5) * 9, 2)) };
       pose.aRU = lerp(pose.aRU, 150, w); pose.aRB = lerp(pose.aRB, 10, w);
+    } else if (g === "unlock") {
+      hand = { kind: "knock", w, beat: 0.9 + 0.1 * Math.sin((t - gestA.t0) * 14) };               // the key held out, turning
+      pose.aRU = lerp(pose.aRU, 80, w); pose.aRB = lerp(pose.aRB, 70, w);
     } else if (g === "knock") {
       const kk = (u * 3) % 1;
       hand = { kind: "knock", w, beat: Math.pow(Math.sin(Math.PI * Math.min(1, kk * 1.4)), 2) };     // three knocks
@@ -434,7 +437,7 @@ export function actorState(s: Scene, a: Actor, t: number) {
   }
   return { x: outX, depth: outD, face, view, clip, expr, say, pose, lookEx, moving, holding, alpha, seatRot, heading, walking: sideNow, depthWalk, gaitT, oneHand,
     faceHeading, faceYaw: faceHeading !== undefined && !lookA ? cl(fdx / 8, -38, 38) : 0, rest,
-    slide: 0, seatIdx: undefined as number | undefined, clipT: curAct ? t - curAct.t0 : 99, hand, bubble };
+    slide: 0, seatIdx: undefined as number | undefined, clipT: curAct ? t - curAct.t0 : 99, hand, bubble, holdKind: holdP?.kind };
 }
 
 // where a prop is right now (it follows whoever is carrying it)
@@ -446,12 +449,13 @@ export function propPlace(s: Scene, p: SceneProp, t: number) {
     const sit = pa.moving ? 0 : sitAt(a, t);
     return {
       x: pa.x + (pa.moving ? pa.face * a.def.height * 0.2 : p.kind === "phone" ? a.def.height * 0.08 : 0), depth: pa.depth - 0.002,
-      lift: a.def.height * (p.kind === "phone" ? (pa.moving ? 0.58 : 0.46) - sit * 0.2 : 0.4 - sit * 0.23), face: pa.face, moving: false, held: true, by: h.by, open: 0, power: 1,
+      lift: a.def.height * (p.kind === "phone" ? (pa.moving ? 0.58 : 0.46) - sit * 0.2 : 0.4 - sit * 0.23), face: pa.face, moving: false, held: true, by: h.by,
+      open: p.kind === "umbrella" ? powerAt(p, t, false) : 0, power: p.kind === "candle" ? powerAt(p, t, true) : 1,
     };
   }
   const pp = posAt(p, t, s.props);
   const pw = powerAt(p, t, DEFAULT_POWER[p.kind] ?? false);
-  const opens = p.kind === "door" || p.kind === "window" || p.kind === "curtains";
+  const opens = p.kind === "door" || p.kind === "window" || p.kind === "curtains" || p.kind === "umbrella";
   return {
     x: pp.x, depth: pp.depth, lift: p.actions.some(q => q.lift !== undefined && q.t0 <= t) ? pp.lift : (p.y ?? 0) * 150,
     face: pp.face, moving: pp.moving, held: false, by: -1,
