@@ -40,6 +40,14 @@ export const PROP_LIST: { kind: PropKind; label: string; color: string; depth: n
   { kind: "cup", label: "Cup", color: "#f4f4f4", depth: 0.2, w: 20 },
   { kind: "book", label: "Book", color: "#3a6fb0", depth: 0.2, w: 28 },
   { kind: "apple", label: "Apple", color: "#c93a3a", depth: 0.2, w: 18 },
+  { kind: "umbrella", label: "Umbrella", color: "#c0392b", depth: 0.2, w: 30 },
+  { kind: "pizza", label: "Pizza", color: "#f2c14e", depth: 0.2, w: 24 },
+  { kind: "flower", label: "Flower", color: "#e0457b", depth: 0.2, w: 18 },
+  { kind: "candle", label: "Candle", color: "#f3ead2", depth: 0.2, w: 14 },
+  { kind: "mirror", label: "Mirror", color: "#7a5c3e", depth: 0.4, w: 40 },
+  { kind: "suitcase", label: "Suitcase", color: "#8a4b2a", depth: 0.2, w: 44 },
+  { kind: "key", label: "Key", color: "#e0b93a", depth: 0.2, w: 20 },
+  { kind: "letter", label: "Letter", color: "#f6f1e3", depth: 0.2, w: 30 },
 ];
 
 // where people can sit: x offsets (px) from the middle of the prop
@@ -331,6 +339,69 @@ export function drawProp(
     case "ivstand": {
       c.fillStyle = "#9aa4b0"; c.fillRect(-2, -170, 4, 170); c.fillRect(-24, -4, 48, 4); c.fillRect(-14, -176, 28, 4);
       rr(c, -8, -150, 16, 28, 5); fl(c, "#cfe9ff");
+      break;
+    }
+
+    case "umbrella": {
+      const o = fx.open ?? 0;
+      c.strokeStyle = "#3a2a1e"; c.lineWidth = 3; c.lineCap = "round";
+      c.beginPath(); c.moveTo(0, -56); c.lineTo(0, -6); c.arc(5, -6, 5, Math.PI, Math.PI * 0.1, true); c.stroke();
+      if (o > 0.5) {
+        c.beginPath(); c.arc(0, -52, 36, Math.PI, 2 * Math.PI);
+        c.arc(24, -52, 12, 0, Math.PI); c.arc(0, -52, 12, 0, Math.PI); c.arc(-24, -52, 12, 0, Math.PI);
+        c.closePath(); fl(c, color);
+      } else {
+        c.beginPath(); c.moveTo(0, -62); c.lineTo(9, -22); c.lineTo(-9, -22); c.closePath(); fl(c, color);
+        c.fillStyle = "#222"; c.fillRect(-9, -30, 18, 3);
+      }
+      break;
+    }
+    case "pizza": {
+      c.beginPath(); c.moveTo(0, -3); c.lineTo(-17, -30); c.quadraticCurveTo(0, -38, 17, -30); c.closePath(); fl(c, "#f2c14e");
+      c.strokeStyle = "#c9863a"; c.lineWidth = 5; c.lineCap = "round"; c.beginPath(); c.moveTo(-16, -30); c.quadraticCurveTo(0, -37, 16, -30); c.stroke();
+      circle(c, -4, -22, 3.2, "#c0392b"); circle(c, 5, -17, 3.2, "#c0392b"); circle(c, 1, -28, 3, "#c0392b");
+      break;
+    }
+    case "flower": {
+      c.strokeStyle = "#3f8a3a"; c.lineWidth = 3; c.beginPath(); c.moveTo(0, 0); c.lineTo(0, -32); c.stroke();
+      circle(c, 6, -12, 4, "#4c9a43");
+      for (let k = 0; k < 6; k++) { const a = (k / 6) * Math.PI * 2; circle(c, Math.cos(a) * 6, -36 + Math.sin(a) * 6, 5, color); }
+      circle(c, 0, -36, 4, "#ffd23f");
+      break;
+    }
+    case "candle": {
+      rr(c, -5, -28, 10, 28, 2); fl(c, color);
+      c.fillStyle = "#2a2a2a"; c.fillRect(-0.7, -31, 1.4, 4);
+      if ((fx.power ?? 1) > 0.5) {
+        const fk = 1 + 0.12 * Math.sin((fx.t ?? 0) * 17);
+        c.fillStyle = "rgba(255,200,80,0.25)"; c.beginPath(); c.arc(0, -38, 13 * fk, 0, 7); c.fill();
+        c.fillStyle = "#ffb83a"; c.beginPath(); c.ellipse(0, -38, 3.6, 7 * fk, 0, 0, 7); c.fill();
+        c.fillStyle = "#fff3b0"; c.beginPath(); c.ellipse(0, -36.5, 1.7, 3.4 * fk, 0, 0, 7); c.fill();
+      }
+      break;
+    }
+    case "mirror": {
+      rr(c, -20, -78, 40, 78, 5); fl(c, "#7a5c3e");
+      rr(c, -16, -74, 32, 70, 3); fl(c, "#cfe9f5");
+      c.strokeStyle = "rgba(255,255,255,0.8)"; c.lineWidth = 4; c.beginPath(); c.moveTo(-9, -64); c.lineTo(5, -42); c.moveTo(-1, -66); c.lineTo(10, -50); c.stroke();
+      break;
+    }
+    case "suitcase": {
+      rr(c, -22, -30, 44, 30, 4); fl(c, color);
+      c.strokeStyle = "#2a2a2a"; c.lineWidth = 3; c.beginPath(); c.moveTo(-8, -30); c.lineTo(-8, -37); c.lineTo(8, -37); c.lineTo(8, -30); c.stroke();
+      c.fillStyle = "#d6b25e"; c.fillRect(-14, -17, 6, 5); c.fillRect(8, -17, 6, 5);
+      c.fillStyle = "rgba(0,0,0,0.18)"; c.fillRect(-22, -18, 44, 2);
+      break;
+    }
+    case "key": {
+      circle(c, -8, -8, 6, "#e0b93a"); circle(c, -8, -8, 2.6, "#fff");
+      c.fillStyle = "#e0b93a"; c.fillRect(-3, -9.5, 18, 3.4); c.fillRect(9, -7, 3, 6); c.fillRect(13.5, -7, 3, 4);
+      break;
+    }
+    case "letter": {
+      rr(c, -16, -22, 32, 22, 2); fl(c, color);
+      c.strokeStyle = "#b9ad8f"; c.lineWidth = 1.6; c.beginPath(); c.moveTo(-16, -22); c.lineTo(0, -9); c.lineTo(16, -22); c.stroke();
+      circle(c, 0, -9, 2.6, "#c0392b");
       break;
     }
    case "cup": {
