@@ -4,7 +4,7 @@ export type ClipId = "idle" | "walk" | "run" | "wave" | "talk" | "type" | "jump"
 export type View = "front" | "side" | "back";
 export type ThemeId =
   | "day" | "sunset" | "night" | "park" | "room" | "pitch" | "school" | "hospital"
-  | "bedroom" | "house" | "classroom" | "ward";
+  | "bedroom" | "house" | "classroom" | "ward" | "street" | "market" | "forest" | "beach" | "kitchen" | "church" | "office" | "graveyard" | "rooftop";
 export type PropKind =
   | "sofa" | "chair" | "table" | "desk" | "bookshelf" | "lamp" | "plant"
   | "tv" | "door" | "bed" | "tree" | "bench" | "streetlight" | "car"
