@@ -601,9 +601,70 @@ const wardL: Layer = { speed: 0.6, tile: 460, draw: (c, i) => {
   c.fillStyle = "#d62839"; c.fillRect(x + 390, GROUND - 300, 14, 44); c.fillRect(x + 375, GROUND - 285, 44, 14);
   c.fillStyle = "#c9d6df"; c.fillRect(x, GROUND - 14, 461, 14); } };
 
+const marketL: Layer = { speed: 0.5, tile: 340, draw: (c, i) => {
+  const x = i * 340, cols = ["#d9534f", "#f0ad4e", "#5cb85c", "#5bc0de"], col = cols[((i % 4) + 4) % 4];
+  c.fillStyle = "#8a6a4a"; c.fillRect(x + 20, GROUND - 120, 6, 120); c.fillRect(x + 290, GROUND - 120, 6, 120);
+  for (let k = 0; k < 8; k++) { c.fillStyle = k % 2 ? "#ffffff" : col; c.fillRect(x + 16 + k * 40, GROUND - 150, 40, 34); }
+  c.fillStyle = "#c9a36a"; c.fillRect(x + 20, GROUND - 70, 276, 16);
+  for (let k = 0; k < 6; k++) { c.fillStyle = cols[(k + i) % 4]; c.beginPath(); c.arc(x + 50 + k * 42, GROUND - 78, 10, 0, 7); c.fill(); } } };
+const beachL: Layer = { speed: 0.2, tile: 800, draw: (c, i) => {
+  const x = i * 800;
+  c.fillStyle = "#3aa7d9"; c.fillRect(x, GROUND - 150, 801, 150);
+  c.fillStyle = "rgba(255,255,255,0.55)";
+  for (let k = 0; k < 8; k++) c.fillRect(x + k * 100 + (k % 3) * 20, GROUND - 120 + (k % 4) * 26, 60, 3);
+  c.fillStyle = "#cfe9f4"; c.fillRect(x, GROUND - 152, 801, 4); } };
+const forestL: Layer = { speed: 0.35, tile: 150, draw: (c, i) => {
+  const x = i * 150 + 40 + rnd(i, 5) * 60, h = 200 + rnd(i, 6) * 150;
+  c.fillStyle = "#4a3422"; c.fillRect(x - 6, GROUND - 40, 12, 40);
+  for (let k = 0; k < 4; k++) {
+    c.fillStyle = k % 2 ? "#1f5a34" : "#2a6b3d"; c.beginPath();
+    c.moveTo(x - 50 + k * 8, GROUND - 30 - k * h * 0.2); c.lineTo(x, GROUND - 30 - k * h * 0.2 - h * 0.35); c.lineTo(x + 50 - k * 8, GROUND - 30 - k * h * 0.2);
+    c.closePath(); c.fill();
+  } } };
+const kitchenL: Layer = { speed: 0.6, tile: 440, draw: (c, i) => {
+  const x = i * 440;
+  c.fillStyle = "#e6dcc8";
+  for (let r = 0; r < 4; r++) for (let q = 0; q < 11; q++) c.fillRect(x + q * 40 + 1, GROUND - 250 + r * 40 + 1, 38, 38);
+  c.fillStyle = "#8a6a4a"; c.fillRect(x + 20, GROUND - 330, 190, 80);
+  c.fillStyle = "#c9a36a"; c.fillRect(x + 26, GROUND - 324, 86, 68); c.fillRect(x + 118, GROUND - 324, 86, 68);
+  c.fillStyle = "#cfe3ee"; c.fillRect(x + 270, GROUND - 320, 120, 100); c.fillStyle = "#ffffff"; c.fillRect(x + 326, GROUND - 320, 4, 100);
+  c.fillStyle = "#cfc2ae"; c.fillRect(x, GROUND - 14, 441, 14); } };
+const churchL: Layer = { speed: 0.55, tile: 380, draw: (c, i) => {
+  const x = i * 380;
+  c.fillStyle = "#d9d2c4"; c.fillRect(x, GROUND - 420, 381, 420);
+  c.fillStyle = "#b9ae98"; for (let k = 0; k < 2; k++) c.fillRect(x + 20 + k * 340, GROUND - 420, 14, 420);
+  c.fillStyle = "#6b9ed8"; c.beginPath(); c.moveTo(x + 120, GROUND - 120); c.lineTo(x + 120, GROUND - 300); c.arc(x + 190, GROUND - 300, 70, Math.PI, 0); c.lineTo(x + 260, GROUND - 120); c.closePath(); c.fill();
+  c.strokeStyle = "#f0d28a"; c.lineWidth = 6; c.beginPath(); c.moveTo(x + 190, GROUND - 120); c.lineTo(x + 190, GROUND - 370); c.moveTo(x + 120, GROUND - 240); c.lineTo(x + 260, GROUND - 240); c.stroke();
+  c.fillStyle = "#cfc2ae"; c.fillRect(x, GROUND - 14, 381, 14); } };
+const officeL: Layer = { speed: 0.6, tile: 460, draw: (c, i) => {
+  const x = i * 460;
+  c.fillStyle = "#bfe3ff"; c.fillRect(x + 30, GROUND - 330, 400, 220);
+  c.fillStyle = "#8aa0b8"; for (let k = 0; k < 6; k++) c.fillRect(x + 50 + k * 60, GROUND - 190 - (k % 3) * 14, 36, 80 + (k % 3) * 14);
+  c.fillStyle = "#a9c9e6"; for (let k = 1; k < 4; k++) c.fillRect(x + 30 + k * 100 - 3, GROUND - 330, 6, 220);
+  c.fillStyle = "#cfd6de"; c.fillRect(x, GROUND - 14, 461, 14); } };
+const graveL: Layer = { speed: 0.5, tile: 200, draw: (c, i) => {
+  const x = i * 200 + 40 + rnd(i, 3) * 60, h = 50 + rnd(i, 4) * 50;
+  c.fillStyle = "#7d828c"; c.fillRect(x, GROUND - h, 40, h); c.beginPath(); c.arc(x + 20, GROUND - h, 20, Math.PI, 0); c.fill();
+  c.fillStyle = "rgba(0,0,0,0.25)"; c.fillRect(x + 12, GROUND - h + 10, 16, 4); c.fillRect(x + 18, GROUND - h + 4, 4, 22); } };
+const roofL: Layer = { speed: 0.4, tile: 260, draw: (c, i) => {
+  const x = i * 260, w = 110 + rnd(i, 2) * 90, h = 160 + rnd(i, 3) * 220;
+  c.fillStyle = "#6a7388"; c.fillRect(x + 20, GROUND - h, w, h);
+  c.fillStyle = "#e8d77a";
+  for (let r = 0; r < h - 30; r += 38) for (let q = 12; q < w - 20; q += 30) if (rnd(i * 7 + r, q) > 0.5) c.fillRect(x + 20 + q, GROUND - h + 12 + r, 12, 16); } };
+
 interface ThemeDef { sky: string[]; far: Layer | null; mid: Layer; ground: Layer; fg: Layer | null; sun?: { x: number; y: number; r: number; c: string }; stars?: boolean }
 
 const THEMES: Record<ThemeId, ThemeDef> = {
+  street:    { sky: ["#8fd0ff", "#eef8ff"], far: hillsL("#c9ddd0"), mid: cityL("#c8a27a", "#fff3c9"), ground: groundL("#6f7379", "#c9c9c9"), fg: null, sun: { x: 1060, y: 110, r: 46, c: "#fff3b0" } },
+  market:    { sky: ["#9fd8ff", "#fdf3dc"], far: hillsL("#d6c9a8"), mid: marketL, ground: groundL("#c9b48a", "#b59f74"), fg: null, sun: { x: 1060, y: 110, r: 46, c: "#fff3b0" } },
+  forest:    { sky: ["#a8d8c0", "#e6f4e6"], far: hillsL("#4a7a5a"), mid: forestL, ground: groundL("#3e7a3a", "#35692f"), fg: fgL("#2a5a2a") },
+  beach:     { sky: ["#7fd0ff", "#f4fbff"], far: null, mid: beachL, ground: groundL("#e8d8a4", "#d9c68c"), fg: null, sun: { x: 1060, y: 110, r: 50, c: "#fff3b0" } },
+  kitchen:   { sky: ["#f2e9d6", "#e6dcc6"], far: null, mid: kitchenL, ground: groundL("#e9e1d0", "#cfc4aa"), fg: null },
+  church:    { sky: ["#d8d2c6", "#bdb6a6"], far: null, mid: churchL, ground: groundL("#8f8a80", "#7d786f"), fg: null },
+  office:    { sky: ["#dfe8f2", "#eef3f8"], far: null, mid: officeL, ground: groundL("#7f8ea3", "#6f7e92"), fg: null },
+  graveyard: { sky: ["#14162e", "#2b2a4d"], far: hillsL("#1d2230"), mid: graveL, ground: groundL("#2a3a2a", "#223022"), fg: fgL("#141c14"), sun: { x: 900, y: 110, r: 36, c: "#f4f1d8" }, stars: true },
+  rooftop:   { sky: ["#9ad0ff", "#e8f4ff"], far: null, mid: roofL, ground: groundL("#6c7078", "#5d6168"), fg: null, sun: { x: 1060, y: 110, r: 46, c: "#fff3b0" } },
+  
   day:      { sky: ["#8fd0ff", "#eef8ff"], far: hillsL("#c9ddd0"), mid: cityL("#b3bfd3", "#e6ecf7"), ground: groundL("#9bc58a", "#86b277"), fg: fgL("#4d8a4f"), sun: { x: 1060, y: 110, r: 46, c: "#fff3b0" } },
   sunset:   { sky: ["#2d1f5e", "#d9577a", "#ffb36b"], far: hillsL("#6b3f7a"), mid: cityL("#4a2f66", "#7a5588"), ground: groundL("#5a6b4a", "#4c5c3e"), fg: fgL("#2f3d2f"), sun: { x: 300, y: 400, r: 70, c: "#ffd29a" } },
   night:    { sky: ["#0b1030", "#1b2a5c"], far: hillsL("#1b2748"), mid: cityL("#202b4d", "#2d3a63", true), ground: groundL("#27413a", "#1f342f"), fg: fgL("#12261f"), sun: { x: 1000, y: 100, r: 38, c: "#f4f1d8" }, stars: true },
@@ -619,6 +680,16 @@ const THEMES: Record<ThemeId, ThemeDef> = {
 };
 
 export const THEME_LIST: { id: ThemeId; label: string; swatch: string }[] = [
+  { id: "street", label: "Street", swatch: "linear-gradient(#8fd0ff,#6f7379)" },
+  { id: "market", label: "Market", swatch: "linear-gradient(#9fd8ff,#c9b48a)" },
+  { id: "forest", label: "Forest", swatch: "linear-gradient(#a8d8c0,#3e7a3a)" },
+  { id: "beach", label: "Beach", swatch: "linear-gradient(#7fd0ff,#3aa7d9,#e8d8a4)" },
+  { id: "kitchen", label: "Kitchen", swatch: "linear-gradient(#f2e9d6,#e9e1d0)" },
+  { id: "church", label: "Church", swatch: "linear-gradient(#d8d2c6,#8f8a80)" },
+  { id: "office", label: "Office", swatch: "linear-gradient(#dfe8f2,#7f8ea3)" },
+  { id: "graveyard", label: "Graveyard", swatch: "linear-gradient(#14162e,#2a3a2a)" },
+  { id: "rooftop", label: "Rooftop", swatch: "linear-gradient(#9ad0ff,#6c7078)" },
+
   { id: "day", label: "Sunny", swatch: "linear-gradient(#8fd0ff,#9bc58a)" },
   { id: "sunset", label: "Sunset", swatch: "linear-gradient(#2d1f5e,#d9577a,#ffb36b)" },
   { id: "night", label: "Night", swatch: "linear-gradient(#0b1030,#27413a)" },
