@@ -24,6 +24,11 @@ interface RoomSpec {
   floor: "wood" | "tile" | "carpet" | "lino"; floorCol: string; windows: number[]; sideWindows?: number[]; lights: number[]; stairs?: boolean;
 }
 const ROOMS: Partial<Record<ThemeId, { spec: RoomSpec; light: EnvLight }>> = {
+  kitchen: { spec: { minX: -6, maxX: 6, minZ: -8, maxZ: 5, h: 4.2, wall: "#f4ecd8", trim: "#ffffff", floor: "tile", floorCol: "#e9e1d0", windows: [2], lights: [-2, 2] }, light: { sky: ["#f2e9d6", "#e6dcc6"], hemi: ["#fff3e0", "#8a7a60", 1.25], room: true } },
+  church: { spec: { minX: -8, maxX: 8, minZ: -14, maxZ: 6, h: 9, wall: "#d9d2c4", trim: "#b9ae98", floor: "tile", floorCol: "#8f8a80", windows: [], sideWindows: [-10, -6, -2], lights: [-4, 4] }, light: { sky: ["#d8d2c6", "#bdb6a6"], hemi: ["#fff1d6", "#6f6a60", 1.0], room: true } },
+  office: { spec: { minX: -9, maxX: 9, minZ: -10, maxZ: 6, h: 4.2, wall: "#e8edf2", trim: "#cbd3dc", floor: "carpet", floorCol: "#7f8ea3", windows: [-6, -2, 2, 6], lights: [-4, 0, 4] }, light: { sky: ["#dfe8f2", "#eef3f8"], hemi: ["#f4f9ff", "#8a96a6", 1.3], room: true } },
+
+  
   room: { spec: { minX: -9, maxX: 9, minZ: -10, maxZ: 6, h: 5, wall: "#eadfce", trim: "#cfc2ae", floor: "wood", floorCol: "#b98c5e", windows: [-6], lights: [-3, 3] }, light: { sky: ["#eadfce", "#d9ccb8"], hemi: ["#fff2e0", "#8a6a4a", 1.5], room: true } },
   bedroom: { spec: { minX: -7, maxX: 7, minZ: -9, maxZ: 5, h: 4.6, wall: "#cfdcec", trim: "#e8eef6", floor: "carpet", floorCol: "#9fb0c8", windows: [-1.5], lights: [0] }, light: { sky: ["#c7d3e6", "#d9e3f0"], hemi: ["#eef4ff", "#7a8aa5", 1.5], room: true } },
   house: { spec: { minX: -9.5, maxX: 9.5, minZ: -13, maxZ: 6, h: 5.5, wall: "#f1e6d3", trim: "#d9c9ae", floor: "wood", floorCol: "#a9774d", windows: [-6, 0, 6], lights: [-6, 0, 6], stairs: true }, light: { sky: ["#e6d6bd", "#f1e6d3"], hemi: ["#fff2e0", "#8a6a4a", 1.5], room: true } },
@@ -106,6 +111,12 @@ function buildRoom(k: Kit, s: RoomSpec, light: EnvLight): Env {
 interface OutCfg { light: EnvLight; ground: string; bld?: [string, string]; road?: boolean; trees?: boolean; lit?: boolean; place?: "pitch" | "school" | "hospital" }
 const DAYSUN = { dir: [0.5, 0.35, -0.8] as [number, number, number], color: "#fff6df", intensity: 2.2, disc: "#fff3b0", size: 5 };
 const OUT: Partial<Record<ThemeId, OutCfg>> = {
+  street: { light: { sky: ["#8fd0ff", "#eef8ff"], hemi: ["#cfe9ff", "#8a9a7a", 1.3], sun: DAYSUN }, ground: "#6f7379", bld: ["#c8a27a", "#fff3c9"], road: true },
+  market: { light: { sky: ["#9fd8ff", "#fdf3dc"], hemi: ["#fff0d6", "#9a8a6a", 1.3], sun: DAYSUN }, ground: "#c9b48a", bld: ["#e0c9a0", "#fff0c0"], trees: true },
+  forest: { light: { sky: ["#a8d8c0", "#e6f4e6"], hemi: ["#cfe9d6", "#4a6a4a", 1.0], sun: { ...DAYSUN, intensity: 1.5 } }, ground: "#3e7a3a", trees: true },
+  beach: { light: { sky: ["#7fd0ff", "#f4fbff"], hemi: ["#d6f0ff", "#c9b88a", 1.4], sun: DAYSUN }, ground: "#e8d8a4" },
+  graveyard: { light: { sky: ["#14162e", "#2b2a4d"], hemi: ["#5b5f9a", "#1d1f33", 0.7], sun: { dir: [0.3, 0.5, -0.8] as [number, number, number], color: "#b8c4ff", intensity: 0.8, disc: "#f4f1d8", size: 3 }, stars: true }, ground: "#2a3a2a", trees: true },
+  rooftop: { light: { sky: ["#9ad0ff", "#e8f4ff"], hemi: ["#d6ecff", "#7a8088", 1.3], sun: DAYSUN }, ground: "#6c7078" },
   day: { light: { sky: ["#8fd0ff", "#eef8ff"], hemi: ["#cfe9ff", "#8a9a7a", 1.3], sun: DAYSUN }, ground: "#9bc58a", bld: ["#b3bfd3", "#e6ecf7"], road: true },
   sunset: { light: { sky: ["#2d1f5e", "#d9577a", "#ffb36b"], hemi: ["#ffb08a", "#4a3a5a", 0.9], sun: { dir: [-0.6, 0.12, -0.8], color: "#ffb27a", intensity: 1.6, disc: "#ffd29a", size: 8 } }, ground: "#5a6b4a", bld: ["#4a2f66", "#7a5588"], road: true },
   night: { light: { sky: ["#0b1030", "#1b2a5c"], hemi: ["#4a5a9a", "#1a2438", 0.8], sun: { dir: [0.4, 0.45, -0.8], color: "#9fb4ff", intensity: 0.9, disc: "#f4f1d8", size: 3.5 }, stars: true }, ground: "#27413a", bld: ["#202b4d", "#ffd86b"], road: true, lit: true },
@@ -277,7 +288,61 @@ function buildOutdoor(k: Kit, cfg: OutCfg): Env {
   };
 }
 
-export function buildEnv(k: Kit, theme: ThemeId): Env {
+// ---------- extra scenery for the newer places ----------
+function addExtras(k: Kit, env: Env, theme: ThemeId) {
+  const { bx, cyl, sph, mesh, toon } = k;
+  const g = new THREE.Group();
+  const rn = (i: number, s: number) => { const v = Math.sin(i * 127.1 + s * 311.7) * 43758.5; return v - Math.floor(v); };
+  if (theme === "beach") {                                        // a moving sea, a foam line and palm trees
+    const sea = k.tex(256, 256, c => {
+      const gr = c.createLinearGradient(0, 0, 0, 256); gr.addColorStop(0, "#2f9bd6"); gr.addColorStop(1, "#58c4ea");
+      c.fillStyle = gr; c.fillRect(0, 0, 256, 256); c.fillStyle = "rgba(255,255,255,0.45)";
+      for (let i = 0; i < 40; i++) c.fillRect((i * 97) % 256, (i * 53) % 256, 36, 3);
+    });
+    sea.wrapS = sea.wrapT = THREE.RepeatWrapping; sea.repeat.set(10, 10);
+    const water = mesh(g, new THREE.PlaneGeometry(220, 120), new THREE.MeshBasicMaterial({ map: sea }), 0, 0.05, -75);
+    water.rotation.x = -Math.PI / 2;
+    bx(g, 220, 0.04, 1.2, "#f4fbff", 0, 0.06, -14.6);
+    for (let i = 0; i < 5; i++) {
+      const px = -12 + i * 6 + rn(i, 1) * 2, pz = -9 - rn(i, 2) * 3, lean = (rn(i, 3) - 0.5) * 0.3;
+      cyl(g, 0.1, 0.16, 4.2, "#8a6a4a", px, 2.1, pz).rotation.z = lean;
+      for (let j = 0; j < 7; j++) {
+        const a = (j / 7) * Math.PI * 2;
+        const lf = mesh(g, new THREE.ConeGeometry(0.22, 2.0, 4), toon("#3f9a4a"), px + Math.cos(a) * 0.9 + lean * 2, 4.2, pz + Math.sin(a) * 0.9);
+        lf.rotation.set(Math.sin(a) * 1.15, 0, -Math.cos(a) * 1.15);
+      }
+    }
+    const old = env.anim; env.anim = (t, dt, alive) => { old(t, dt, alive); sea.offset.set(t * 0.01, t * 0.02); };
+  } else if (theme === "graveyard") {                             // rows of gravestones and a few crosses
+    for (let r = 0; r < 3; r++) for (let q = -4; q <= 4; q++) {
+      if (r === 0 && Math.abs(q) < 1) continue;
+      const x = q * 2.6 + (rn(q, r) - 0.5) * 0.6, z = -3 - r * 3.2;
+      if (rn(q * 3, r) > 0.7) { bx(g, 0.14, 1.3, 0.14, "#8d9199", x, 0.65, z); bx(g, 0.7, 0.14, 0.14, "#8d9199", x, 0.95, z); }
+      else { bx(g, 0.75, 0.9, 0.18, "#8d9199", x, 0.45, z); sph(g, 0.375, "#8d9199", x, 0.9, z, 1, 0.55, 0.25); }
+    }
+  } else if (theme === "rooftop") {                               // a low wall round the edge and a skyline behind
+    bx(g, 26, 1.1, 0.4, "#8a8f98", 0, 0.55, -11); bx(g, 0.4, 1.1, 18, "#8a8f98", -13, 0.55, -2); bx(g, 0.4, 1.1, 18, "#8a8f98", 13, 0.55, -2);
+    for (let i = 0; i < 24; i++) bx(g, 3 + rn(i, 1) * 4, 6 + rn(i, 2) * 18, 3 + rn(i, 3) * 4, i % 3 ? "#6a7388" : "#7d869b", -60 + i * 5.2, 0, -32 - rn(i, 4) * 22).position.y = (6 + rn(i, 2) * 18) / 2 - 2;
+  } else if (theme === "forest") {                                // a thick ring of trees around the clearing
+    for (let i = 0; i < 46; i++) {
+      const a = (i / 46) * Math.PI * 2, rad = 15 + rn(i, 1) * 20, x = Math.cos(a) * rad, z = -4 + Math.sin(a) * rad * 0.8, h = 5 + rn(i, 2) * 4;
+      cyl(g, 0.2, 0.3, h * 0.4, "#5a3f28", x, h * 0.2, z);
+      mesh(g, new THREE.ConeGeometry(1.7, h * 0.7, 7), toon(i % 2 ? "#1f5a34" : "#2a6b3d"), x, h * 0.4 + h * 0.3, z);
+      mesh(g, new THREE.ConeGeometry(1.3, h * 0.5, 7), toon(i % 2 ? "#2a6b3d" : "#1f5a34"), x, h * 0.7 + h * 0.25, z);
+    }
+  } else if (theme === "market") {                                // striped stall awnings along the back
+    for (let i = 0; i < 5; i++) {
+      const x = -10 + i * 5, col = ["#d9534f", "#f0ad4e", "#5cb85c", "#5bc0de", "#9b59b6"][i];
+      bx(g, 0.12, 2.7, 0.12, "#8a6a4a", x - 1.8, 1.35, -9); bx(g, 0.12, 2.7, 0.12, "#8a6a4a", x + 1.8, 1.35, -9);
+      for (let s = 0; s < 6; s++) bx(g, 0.6, 0.08, 1.7, s % 2 ? "#ffffff" : col, x - 1.5 + s * 0.6, 2.75, -9.4).rotation.x = -0.2;
+    }
+  }
+  env.parts["extras"] = [g]; env.group.add(g);
+}
+
+export function buildEnv(k: Kit, theme: ThemeId): Env { const env = buildEnvBase(k, theme); addExtras(k, env, theme); return env; }
+
+function buildEnvBase(k: Kit, theme: ThemeId): Env {
   if (theme === "pitch") return buildPitch(k);
   const room = ROOMS[theme];
   if (room) return buildRoom(k, room.spec, room.light);
