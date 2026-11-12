@@ -63,4 +63,49 @@ export const TEMPLATES: Record<ThemeId, TItem[]> = {
     I("ivstand", -5.4, -7.6), I("ivstand", -5.4, -4.2), I("locker", 3, -8.7), I("locker", 4.1, -8.7),
     I("curtains", -2, -8.9, { y: 1.1 }), I("clock", 6, -8.95, { y: 3 }), I("plant", 7, -8.2), I("chair", 5.5, -3, { rot: 180 }),
   ],
+
+    street: street,
+  market: [
+    I("table", -6, -8), I("table", -2, -8), I("table", 3, -8), I("table", 7, -8),
+    I("box", -6, -8, { scale: 0.6 }), I("bag", -2, -8, { scale: 0.6 }),
+    I("apple", 3, -8, { scale: 0.6 }), I("umbrella", 7, -8.5),
+    I("bin", -9, -6), I("bench", 0, -5),
+  ],
+  forest: [
+    I("tree", -9, -6), I("tree", -6, -11), I("tree", -2, -8), I("tree", 3, -12),
+    I("tree", 7, -7), I("tree", 10, -11), I("bush", -4, -5), I("bush", 5, -5),
+    I("flower", -1, -4), I("flower", 2, -5),
+  ],
+  beach: [
+    I("umbrella", -6, -7), I("umbrella", 5, -8), I("bench", 0, -9),
+    I("ball", 2, -3), I("bag", -5.5, -6), I("bin", 9, -8),
+  ],
+  kitchen: [
+    I("fridge", -8, -9.5), I("counter", -6, -9.6), I("counter", -3.8, -9.6),
+    I("counter", -1.6, -9.6), I("table", 4, -6, { scale: 1.2 }),
+    I("chair", 2.5, -6, { rot: 90 }), I("chair", 5.5, -6, { rot: -90 }),
+    I("cup", 4, -6, { scale: 0.6 }), I("clock", 1, -9.95, { y: 3.4 }),
+  ],
+  church: [
+    I("bench", -4, -4), I("bench", 4, -4), I("bench", -4, -7), I("bench", 4, -7),
+    I("candle", -1.5, -9.4), I("candle", 1.5, -9.4), I("table", 0, -9.4),
+    I("window", -6, -9.95, { y: 2.5 }), I("window", 6, -9.95, { y: 2.5 }),
+  ],
+  office: [
+    I("desk", -5, -7), I("chair", -5, -5.9, { rot: 180 }),
+    I("desk", 0, -7), I("chair", 0, -5.9, { rot: 180 }),
+    I("desk", 5, -7), I("chair", 5, -5.9, { rot: 180 }),
+    I("plant", -8.4, -9), I("bookshelf", 8.4, -9.4), I("clock", 0, -9.95, { y: 3.4 }),
+    I("fan", 0, -4, { y: 4.6 }),
+  ],
+  graveyard: [
+    I("tree", -9, -9), I("tree", 9, -10), I("fence", -5, -11), I("fence", 5, -11),
+    I("bush", -6, -6), I("bush", 6, -7), I("flower", -2, -5), I("candle", 2, -6),
+    I("streetlight", 0, -10),
+  ],
+  rooftop: [
+    I("fence", -6, -9), I("fence", 0, -9), I("fence", 6, -9),
+    I("bench", -3, -6), I("bench", 4, -6), I("plant", -8, -8),
+    I("plant", 8, -8), I("streetlight", 9, -9),
+  ],
 };
