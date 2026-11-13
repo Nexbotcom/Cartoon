@@ -75,4 +75,4 @@ export interface SceneProp extends PropMember { actions: Action[]; holds: Hold[]
 export interface CamKey { t: number; x: number; y: number; zoom: number; follow?: number; az?: number; el?: number }
 // A 360 / orbit camera move. Only used by the 3D mode, and only where the script asks for it.
 export interface Shot3D { t0: number; t1: number; deg: number; target?: number }
-export interface Scene { duration: number; actors: Actor[]; props: SceneProp[]; cam: CamKey[]; shots: Shot3D[]; warnings: string[]; notes?: string[]; lights?: { t: number; on: boolean; ramp: number }[] }
+export interface Scene { duration: number; actors: Actor[]; props: SceneProp[]; cam: CamKey[]; shots: Shot3D[]; warnings: string[]; notes?: string[]; lights?: { t: number; on: boolean; ramp: number }[]; weather?: { t: number; ramp: number; v: { rain: number; snow: number; fog: number; storm: number } }[]; texts?: { t0: number; t1: number; text: string; style: "card" | "center" | "bottom" }[] }
