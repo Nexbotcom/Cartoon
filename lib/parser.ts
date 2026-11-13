@@ -1326,5 +1326,5 @@ export function parseScript(
   const total = Math.max(maxT, beatEnd) + 0.6;
   rideOpen.forEach(r => { if (r) r.t1 = total; });   // anyone still in a car stays there to the end
   cam.sort((a, b) => a.t - b.t);
-  return { duration: total, actors, props, cam, shots, warnings, notes, lights: lights: lights.sort((a, b) => a.t - b.t), weather: weatherKeys.sort((a, b) => a.t - b.t), texts };
+  return { duration: total, actors, props, cam, shots, warnings, notes, lights: lights.sort((a, b) => a.t - b.t), weather: weatherKeys.sort((a, b) => a.t - b.t), texts };
 }
