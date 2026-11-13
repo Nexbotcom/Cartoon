@@ -125,6 +125,8 @@ export function parseScript(
   const cam: CamKey[] = [{ t: 0, x: W / 2, y: H / 2, zoom: 1 }];
   const shots: Shot3D[] = [];
   const lights: { t: number; on: boolean; ramp: number }[] = [];
+  const weatherKeys: { t: number; ramp: number; v: { rain: number; snow: number; fog: number; storm: number } }[] = [];
+  const texts: { t0: number; t1: number; text: string; style: "card" | "center" | "bottom" }[] = [];
   const warnings: string[] = [];
   const warn = (m: string) => { if (!warnings.includes(m)) warnings.push(m); };
   const notes: string[] = [];
@@ -1245,11 +1247,13 @@ export function parseScript(
     let parallel = false;
     if (/^[&+]/.test(line)) { parallel = true; line = line.replace(/^[&+]\s*/, ""); }
     const m = line.match(/^([^:"]{1,30}):\s*(.*)$/);
-    let who = -1, pwho = -1, isCam = false, isLight = false, everyone = false, body = line;
+    let who = -1, pwho = -1, isCam = false, isLight = false, isWeather = false, isText = false, everyone = false, body = line;
     if (m) {
       const nm = m[1].trim().toLowerCase();
       if (nm === "camera" || nm === "cam") { isCam = true; body = m[2]; }
       else if (nm === "light" || nm === "lights") { isLight = true; body = m[2]; }
+      else if (nm === "weather") { isLight = true; isWeather = true; body = m[2]; }
+      else if (nm === "text" || nm === "title" || nm === "caption") { isText = true; body = m[2]; }
       else if (EVERY.test(nm) && !actors.some(a => a.def.name.toLowerCase() === nm)) { everyone = true; body = m[2]; }
       else {
         const i = actors.findIndex(a => a.def.name.toLowerCase() === nm);
@@ -1260,10 +1264,12 @@ export function parseScript(
         }
       }
     }
-    if (!isCam && !isLight && !everyone && who < 0 && pwho < 0) { if (!actors.length) continue; who = 0; }
+    if (!isCam && !isLight && !isText && !everyone && who < 0 && pwho < 0) { 
+    if (!actors.length) continue; who = 0; }
     if (/\b(meanwhile|at the same time|simultaneously)\b/i.test(body.replace(/"[^"]*"/g, " "))) parallel = true;
 
-    const free = isCam || isLight || pwho >= 0;   // camera and prop lines run alongside the previous line
+    const textCard = isText && /\b(card|title|full|black|screen)\b/.test(body.toLowerCase().replace(/"[^"]*"/g, " "));
+    const free = isCam || isLight || pwho >= 0 || (isText && !textCard);       // a title card stops the film; other text shows over the action
     const start = isLight && prevWasLight ? Math.max(prevStart, lightEndT) : parallel || free ? prevStart : beatEnd;
     if (!parallel && !free) prevStart = start;
     const segs = splitSegs(body);
@@ -1272,7 +1278,7 @@ export function parseScript(
       for (const seg of segs) {
         const wm = seg.match(/^(?:wait|pause|hold)\D*(\d+(?:\.\d+)?)/i);
         if (wm) { tl += +wm[1]; continue; }
-        tl = isCam ? camSeg(seg, tl) : isLight ? lightSeg(seg, tl) : pwho >= 0 ? propSeg(pwho, seg, tl) : speakSeg(idx, seg, tl);
+        tl = isCam ? camSeg(seg, tl) : isLight ? (isWeather ? weatherSeg(seg, tl) : lightSeg(seg, tl)) : isText ? textSeg(seg, tl) : pwho >= 0 ? propSeg(pwho, seg, tl) : speakSeg(idx, seg, tl);
       }
       return tl;
     };
