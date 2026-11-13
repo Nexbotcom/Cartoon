@@ -480,6 +480,84 @@ export function lightAt(s: Scene, t: number): number {
   return val;
 }
 
+
+
+// ---------- weather and text on the screen ----------
+export interface WeatherNow { rain: number; snow: number; fog: number; storm: number; flash: number }
+export function weatherAt(s: Scene, t: number): WeatherNow {
+  const ks = s.weather;
+  const z = { rain: 0, snow: 0, fog: 0, storm: 0 };
+  if (!ks || !ks.length) return { ...z, flash: 0 };
+  let from = { ...z }, cur = { ...z };
+  for (const k of ks) {
+    if (t < k.t) break;
+    const u = sm(cl((t - k.t) / Math.max(0.05, k.ramp), 0, 1));
+    cur = { rain: lerp(from.rain, k.v.rain, u), snow: lerp(from.snow, k.v.snow, u), fog: lerp(from.fog, k.v.fog, u), storm: lerp(from.storm, k.v.storm, u) };
+    from = { ...k.v };
+  }
+  let flash = 0;
+  if (cur.storm > 0.05) {                                  // a bolt every 3 to 5 seconds, with a quick second flicker
+    const ph = (t * 0.27 + 0.37) % 1;
+    const bolt = (x: number) => Math.exp(-Math.pow((x - 0.06) / 0.02, 2)) + 0.6 * Math.exp(-Math.pow((x - 0.14) / 0.02, 2));
+    flash = Math.min(1, bolt(ph)) * cur.storm;
+  }
+  return { ...cur, flash };
+}
+function drawWeather2D(c: CanvasRenderingContext2D, s: Scene, t: number) {
+  const w = weatherAt(s, t);
+  if (w.rain < 0.02 && w.snow < 0.02 && w.fog < 0.02 && w.flash < 0.02) return;
+  if (w.rain > 0.02) {
+    c.fillStyle = `rgba(30,40,60,${(0.22 * w.rain).toFixed(3)})`; c.fillRect(-W, -H, 3 * W, 3 * H);
+    c.strokeStyle = `rgba(200,220,255,${(0.5 * Math.min(1, w.rain * 1.3)).toFixed(3)})`; c.lineWidth = 1.6; c.beginPath();
+    const n = Math.round(260 * w.rain);
+    for (let i = 0; i < n; i++) {
+      const x = -W * 0.3 + rnd(i, 1) * W * 1.6 - ((t * 140) % 40), y = ((rnd(i, 2) * (H + 80) + t * (900 + rnd(i, 3) * 300)) % (H + 80)) - 40;
+      c.moveTo(x, y); c.lineTo(x - 7, y + 24);
+    }
+    c.stroke();
+  }
+  if (w.snow > 0.02) {
+    c.fillStyle = `rgba(255,255,255,${(0.9 * Math.min(1, w.snow * 1.3)).toFixed(3)})`;
+    const n = Math.round(160 * w.snow);
+    for (let i = 0; i < n; i++) {
+      const x = -W * 0.2 + rnd(i, 4) * W * 1.4 + Math.sin(t * 1.2 + i) * 18, y = ((rnd(i, 5) * H + t * (50 + rnd(i, 6) * 60)) % (H + 20)) - 10;
+      c.beginPath(); c.arc(x, y, 1.6 + rnd(i, 7) * 2.4, 0, 7); c.fill();
+    }
+  }
+  if (w.fog > 0.02) {
+    const g = c.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, `rgba(215,222,232,${(0.55 * w.fog).toFixed(3)})`); g.addColorStop(1, `rgba(225,230,238,${(0.8 * w.fog).toFixed(3)})`);
+    c.fillStyle = g; c.fillRect(-W, -H, 3 * W, 3 * H);
+  }
+  if (w.flash > 0.02) { c.fillStyle = `rgba(235,240,255,${(0.85 * w.flash).toFixed(3)})`; c.fillRect(-W, -H, 3 * W, 3 * H); }
+}
+// title cards and captions, drawn on the finished picture (the same for 2D and 3D, and in the exported video)
+export function drawScreenText(c: CanvasRenderingContext2D, s: Scene, t: number) {
+  const ks = s.texts;
+  if (!ks || !ks.length) return;
+  const cw = c.canvas.width, ch = c.canvas.height, vert = ch > cw;
+  for (const k of ks) {
+    if (t < k.t0 || t > k.t1) continue;
+    const a = sm(cl((t - k.t0) / 0.4, 0, 1)) * (1 - sm(cl((t - (k.t1 - 0.4)) / 0.4, 0, 1)));
+    if (a <= 0.01) continue;
+    c.save(); c.setTransform(1, 0, 0, 1, 0, 0);
+    const size = Math.round(cw * (k.style === "bottom" ? (vert ? 0.06 : 0.034) : vert ? 0.095 : 0.062));
+    c.font = `${k.style === "bottom" ? 600 : 800} ${size}px system-ui, sans-serif`; c.textAlign = "center"; c.textBaseline = "middle";
+    const words = k.text.split(/\s+/), lines: string[] = []; let cur = "";
+    for (const w of words) { const test = cur ? cur + " " + w : w; if (c.measureText(test).width > cw * 0.86 && cur) { lines.push(cur); cur = w; } else cur = test; }
+    if (cur) lines.push(cur);
+    const lh = size * 1.25, y0 = (k.style === "bottom" ? ch * 0.86 : ch * 0.5) - ((lines.length - 1) * lh) / 2;
+    if (k.style === "card") { c.fillStyle = `rgba(0,0,0,${a.toFixed(3)})`; c.fillRect(0, 0, cw, ch); }
+    else if (k.style === "bottom") { c.fillStyle = `rgba(0,0,0,${(0.55 * a).toFixed(3)})`; c.fillRect(0, y0 - lh * 0.8, cw, lines.length * lh + lh * 0.6); }
+    c.globalAlpha = a;
+    lines.forEach((ln, i) => {
+      if (k.style !== "card") { c.lineJoin = "round"; c.lineWidth = size * 0.16; c.strokeStyle = "rgba(0,0,0,0.85)"; c.strokeText(ln, cw / 2, y0 + i * lh); }
+      c.fillStyle = "#ffffff"; c.fillText(ln, cw / 2, y0 + i * lh);
+    });
+    c.restore();
+  }
+}
+
 export function camAt(s: Scene, t: number) {
   const k = s.cam; let i = 0;
   while (i < k.length - 1 && k[i + 1].t <= t) i++;
@@ -861,7 +939,9 @@ export function renderFrame(c: CanvasRenderingContext2D, s: Scene, t: number, op
     if (opts.bubbles !== false) for (const q of talkers) drawBubble(c, q.say, q.x, q.y);
   });
   if (th.fg) layer(c, th.fg, cam);
+  drawWeather2D(c, s, t);
   const lv = lightAt(s, t);
   if (lv < 0.995) { c.fillStyle = `rgba(6,10,32,${(0.72 * (1 - lv)).toFixed(3)})`; c.fillRect(-W, -H, 3 * W, 3 * H); }
+  drawScreenText(c, s, t);
   c.restore();
 }
