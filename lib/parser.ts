@@ -1220,6 +1220,37 @@ export function parseScript(
     return r;
   };
 
+
+
+    // ---------- weather: "Weather: rain", "snow", "fog", "storm", "lightning", "clear", "rain for 6 seconds" ----------
+  const weatherSeg = (seg: string, t0: number): number => {
+    const l = seg.toLowerCase();
+    const explicit = l.match(/(\d+(?:\.\d+)?)\s*(?:s\b|sec)/)?.[1];
+    const ramp = /\b(slow|slowly|gradual|gradually)\b/.test(l) ? 4 : /\b(sudden|suddenly|instant|instantly)\b/.test(l) ? 0.2 : 1.5;
+    let v = { rain: 0, snow: 0, fog: 0, storm: 0 }, found = true;
+    if (/\b(storm|thunder|thunderstorm)\b/.test(l)) v = { rain: 1, snow: 0, fog: 0.25, storm: 1 };
+    else if (/\blightning\b/.test(l)) v = { rain: 0.35, snow: 0, fog: 0.1, storm: 1 };
+    else if (/\b(rain|raining|shower|drizzle|pouring)\b/.test(l)) v = { rain: 1, snow: 0, fog: 0.2, storm: 0 };
+    else if (/\b(snow|snowing|blizzard)\b/.test(l)) v = { rain: 0, snow: 1, fog: 0.2, storm: 0 };
+    else if (/\b(fog|foggy|mist|misty|haze)\b/.test(l)) v = { rain: 0, snow: 0, fog: 1, storm: 0 };
+    else if (!/\b(clear|sunny|stop|stops|end|ends|none|dry)\b/.test(l)) found = false;
+    if (!found) return t0;
+    weatherKeys.push({ t: t0, ramp, v });
+    if (explicit) { weatherKeys.push({ t: t0 + +explicit, ramp, v: { rain: 0, snow: 0, fog: 0, storm: 0 } }); return t0 + +explicit; }
+    return t0 + 0.2;
+  };
+  // ---------- text on the screen: Text: "Meanwhile..."  /  Text: "Case File #1" card  /  Text: "He ran." at the bottom ----------
+  const textSeg = (seg: string, t0: number): number => {
+    const quoted = seg.match(/"([^"]+)"/)?.[1];
+    if (!quoted) return t0;
+    const l = seg.replace(/"[^"]*"/g, " ").toLowerCase();
+    const explicit = l.match(/(\d+(?:\.\d+)?)\s*(?:s\b|sec)/)?.[1];
+    const style: "card" | "center" | "bottom" = /\b(card|title|full|black|screen)\b/.test(l) ? "card" : /\b(bottom|caption|subtitle|under)\b/.test(l) ? "bottom" : "center";
+    const dur = explicit ? +explicit : Math.max(2.5, quoted.split(/\s+/).length * 0.45 + 1.2);
+    texts.push({ t0, t1: t0 + dur, text: quoted, style });
+    maxT = Math.max(maxT, t0 + dur);
+    return t0 + dur;
+  };
     // ---------- one step of a light line: "Lights: off", "Lights: on", "Lights: off for 3 seconds", "Lights: flicker" ----------
   const lightSeg = (seg: string, t0: number): number => {
     const l = seg.toLowerCase();
@@ -1295,5 +1326,5 @@ export function parseScript(
   const total = Math.max(maxT, beatEnd) + 0.6;
   rideOpen.forEach(r => { if (r) r.t1 = total; });   // anyone still in a car stays there to the end
   cam.sort((a, b) => a.t - b.t);
-  return { duration: total, actors, props, cam, shots, warnings, notes, lights: lights.sort((a, b) => a.t - b.t) };
+  return { duration: total, actors, props, cam, shots, warnings, notes, lights: lights: lights.sort((a, b) => a.t - b.t), weather: weatherKeys.sort((a, b) => a.t - b.t), texts };
 }
