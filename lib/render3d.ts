@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { CharacterDef, Scene, ThemeId } from "./types";
-import { FOOT, H, W, actorState, camAt, drawBubble, lightAt, posAt, propPlace, smoothPose, visibleAt } from "./engine";
+import { FOOT, H, W, actorState, camAt, drawBubble, drawScreenText, lightAt, posAt, propPlace, smoothPose, visibleAt, weatherAt } from "./engine";
 import { AnimIn, D, TAU, cl, lerp, makeKit, sm } from "./kit3d";
 import { Env, buildEnv } from "./env3d";
 import { RiderHead, buildProp3D } from "./props3d";
@@ -772,6 +772,51 @@ export function createRenderer3D(): Renderer3D {
     return ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -y), p) ? { X: p.x, Z: p.z } : null;
   };
 
+
+
+
+    // ---------- weather: rain and snow follow the camera, fog closes in, lightning flashes ----------
+  let rainObj: THREE.LineSegments | null = null, snowObj: THREE.Points | null = null;
+  const RN = 1100, SN = 700;
+  const rs = (i: number, k: number) => { const v = Math.sin(i * 127.1 + k * 311.7) * 43758.5; return v - Math.floor(v); };
+  const fogGrey = new THREE.Color("#cfd6df"), fogBase = new THREE.Color();
+  const updateWeather = (wv: { rain: number; snow: number; fog: number }, t: number, room: boolean, skyCol: string) => {
+    const cx = camera.position.x, cz = camera.position.z;
+    if (wv.rain > 0.02 && !room) {
+      if (!rainObj) {
+        const geo = new THREE.BufferGeometry(); geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(RN * 6), 3));
+        rainObj = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: 0xbfd8ff, transparent: true, opacity: 0.5, fog: false }));
+        rainObj.frustumCulled = false; scene3.add(rainObj);
+      }
+      const pos = (rainObj.geometry.getAttribute("position") as THREE.BufferAttribute), n = Math.round(RN * Math.min(1, wv.rain));
+      for (let i = 0; i < RN; i++) {
+        const on = i < n, x = (rs(i, 1) - 0.5) * 28, z = (rs(i, 2) - 0.5) * 28, y = 12 - ((t * (14 + rs(i, 3) * 6) + rs(i, 4) * 12) % 12);
+        pos.setXYZ(i * 2, x, on ? y : -50, z); pos.setXYZ(i * 2 + 1, x - 0.04, on ? y + 0.55 : -50, z);
+      }
+      pos.needsUpdate = true; rainObj.position.set(cx, 0, cz); rainObj.visible = true;
+      (rainObj.material as THREE.LineBasicMaterial).opacity = 0.5 * Math.min(1, wv.rain * 1.3);
+    } else if (rainObj) rainObj.visible = false;
+    if (wv.snow > 0.02 && !room) {
+      if (!snowObj) {
+        const geo = new THREE.BufferGeometry(); geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(SN * 3), 3));
+        snowObj = new THREE.Points(geo, new THREE.PointsMaterial({ color: 0xffffff, size: 4, sizeAttenuation: false, transparent: true, opacity: 0.9, fog: false }));
+        snowObj.frustumCulled = false; scene3.add(snowObj);
+      }
+      const pos = (snowObj.geometry.getAttribute("position") as THREE.BufferAttribute), n = Math.round(SN * Math.min(1, wv.snow));
+      for (let i = 0; i < SN; i++) {
+        const on = i < n, x = (rs(i, 5) - 0.5) * 28 + Math.sin(t * 0.9 + i) * 0.5, z = (rs(i, 6) - 0.5) * 28 + Math.cos(t * 0.7 + i) * 0.4, y = 10 - ((t * (1.1 + rs(i, 7) * 1.2) + rs(i, 8) * 10) % 10);
+        pos.setXYZ(i, x, on ? y : -50, z);
+      }
+      pos.needsUpdate = true; snowObj.position.set(cx, 0, cz); snowObj.visible = true;
+    } else if (snowObj) snowObj.visible = false;
+    const fg = scene3.fog as THREE.Fog | null;                                   // fog: closer and greyer
+    if (fg) {
+      fogBase.set(skyCol);
+      fg.near = (room ? 90 : 45) * (1 - wv.fog) + 3 * wv.fog; fg.far = (room ? 170 : 110) * (1 - wv.fog) + 26 * wv.fog;
+      fg.color.copy(fogBase).lerp(fogGrey, Math.min(1, wv.fog * 0.85));
+    }
+  };
+
   // ---------- frame ----------
   let lastNow = performance.now(), lastT = 0;
   let RW = W, RH = H;
@@ -808,6 +853,11 @@ export function createRenderer3D(): Renderer3D {
     const fl = 0.1 + 0.9 * (o.editor ? 1 : lightAt(s, t));
     hemi.intensity = e.light.hemi[2] * fl;
     sun.intensity = (e.light.sun ? e.light.sun.intensity : 0.5) * fl;
+    const wv = o.editor ? { rain: 0, snow: 0, fog: 0, storm: 0, flash: 0 } : weatherAt(s, t);
+    const wd = 1 - 0.3 * Math.max(wv.rain, wv.storm);                            // a grey, heavier light in the rain
+    hemi.intensity = e.light.hemi[2] * fl * wd + 2.2 * wv.flash;
+    sun.intensity = (e.light.sun ? e.light.sun.intensity : 0.5) * fl * wd + 1.6 * wv.flash;
+    updateWeather(wv, t, !!e.light.room, e.light.sky[e.light.sky.length - 1]);
 
     const talkers: { x: number; y: number; z: number; say: string }[] = [];
     const sits: number[] = [];
@@ -916,6 +966,7 @@ export function createRenderer3D(): Renderer3D {
       renderer.render(scene3, camera);
     }
     c.drawImage(canvas, 0, 0, RW, RH);
+    if (!o.editor) drawScreenText(c, s, t);
 
     if (o.bubbles && !o.editor) {
       for (const q of talkers) {
