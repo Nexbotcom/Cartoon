@@ -996,7 +996,7 @@ export function renderFrame(c: CanvasRenderingContext2D, s: Scene, t: number, op
       const base = st.depthWalk ? depthWalkPose(st.pose, st.gaitT, st.clip === "run", st.holding) : st.pose;
       const pose = smoothPose("2d" + ai, { ...base, yaw: base.yaw + st.faceYaw }, t);
       items.push({ depth: st.depth, order: 1, draw: () => withAlpha(c, st.alpha, () => { drawCape2D(c, st, a.def, fy, sc); drawActor(c, a.def, pose, st.expr, st.x, fy, sc,
-        { view: st.view, face: st.face, seed: Math.floor(t * 8), prop: st.clip === "type" ? "laptop" : undefined })) });
+        { view: st.view, face: st.face, seed: Math.floor(t * 8), prop: st.clip === "type" ? "laptop" : undefined }); drawGear2D(c, st, a.def, pose, fy, sc); }) });
       if (st.bubble) talkers.push({ x: st.x, y: fy - a.def.height * sc * 1.02 - 10, say: st.bubble });
     });
     items.sort((a, b) => b.depth - a.depth || a.order - b.order);
