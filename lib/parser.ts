@@ -43,6 +43,39 @@ const HUG = /\b(hug|hugs|hugging|embrace|embraces)\b/;
 const FIVE = /\bhigh[- ]?fives?\b/;
 const CLAP = /\b(clap|claps|clapping|applaud|applauds|applauding)\b/;
 const DANCE = /\b(dance|dances|dancing|boogie|boogies)\b/;
+type GearSlot = "hat" | "glasses" | "mask" | "cape";
+const COLORS: Record<string, string> = { red: "#c0392b", blue: "#2f6fdc", green: "#2e8b57", yellow: "#e8c33a", orange: "#e67e22", purple: "#7b4fc4", pink: "#e75a9a", black: "#1c1c1c", white: "#f4f4f4", brown: "#7a4a24", gold: "#d4a82e", grey: "#8a8f98", gray: "#8a8f98" };
+const GEAR_WORDS: [RegExp, GearSlot, string, string][] = [
+  [/\btop hat\b|\btophat\b/, "hat", "tophat", "#1f1f24"],
+  [/\bwizard'?s? hat\b/, "hat", "wizard", "#5b3fa8"],
+  [/\bcowboy hat\b/, "hat", "cowboy", "#8a5a2b"],
+  [/\bpirate hat\b/, "hat", "pirate", "#1a1a1a"],
+  [/\b(fedora|detective hat)\b/, "hat", "fedora", "#5a4a3a"],
+  [/\bcrown\b/, "hat", "crown", "#e0b93a"],
+  [/\bbeanie\b/, "hat", "beanie", "#c0392b"],
+  [/\bcap\b|\bhat\b/, "hat", "cap", "#3d7bff"],
+  [/\b(sunglasses|shades)\b/, "glasses", "sun", "#15151a"],
+  [/\b(glasses|spectacles)\b/, "glasses", "round", "#2b2b30"],
+  [/\b(surgical|doctor'?s?|face) mask\b/, "mask", "surgical", "#bfe3f5"],
+  [/\b(superhero|hero) mask\b/, "mask", "hero", "#c0392b"],
+  [/\b(bandit|robber|eye) mask\b/, "mask", "bandit", "#15151a"],
+  [/\b(eyepatch|eye patch)\b/, "mask", "patch", "#15151a"],
+  [/\bmask\b/, "mask", "hero", "#c0392b"],
+  [/\b(cape|cloak)\b/, "cape", "cape", "#c0392b"],
+];
+const COSTUMES: Record<string, { slot: GearSlot; item?: string; color?: string }[]> = {
+  wizard: [{ slot: "hat", item: "wizard", color: "#5b3fa8" }, { slot: "cape", item: "cape", color: "#5b3fa8" }],
+  king: [{ slot: "hat", item: "crown", color: "#e0b93a" }, { slot: "cape", item: "cape", color: "#c0392b" }],
+  queen: [{ slot: "hat", item: "crown", color: "#e0b93a" }, { slot: "cape", item: "cape", color: "#7b4fc4" }],
+  superhero: [{ slot: "mask", item: "hero", color: "#c0392b" }, { slot: "cape", item: "cape", color: "#c0392b" }],
+  hero: [{ slot: "mask", item: "hero", color: "#2f6fdc" }, { slot: "cape", item: "cape", color: "#2f6fdc" }],
+  detective: [{ slot: "hat", item: "fedora", color: "#5a4a3a" }],
+  doctor: [{ slot: "mask", item: "surgical", color: "#bfe3f5" }],
+  cowboy: [{ slot: "hat", item: "cowboy", color: "#8a5a2b" }],
+  pirate: [{ slot: "hat", item: "pirate", color: "#1a1a1a" }, { slot: "mask", item: "patch", color: "#15151a" }],
+  cool: [{ slot: "glasses", item: "sun", color: "#15151a" }, { slot: "hat", item: "cap", color: "#3d7bff" }],
+};
+const WEARCMD = /\b(put(s)? on|wear(s|ing)?|don(s)?|dress(es)? (up )?as|become(s)?|turn(s)? into|take(s)? off|remove(s)?|put(s)? away)\b/;
 const THINK = /\b(think|thinks|thinking|wonder|wonders|dream|dreams)\b/;
 const WHISPER = /\b(whisper|whispers|whispering)\b/;
 const SHOUT = /\b(shout|shouts|shouting|yell|yells|yelling|scream|screams|screaming)\b/;
@@ -834,6 +867,22 @@ export function parseScript(
           me.actions.push({ t0: t, t1: t + dur, use });
           t += dur; moveDone = true;
         }
+      }
+    }
+
+        // ----- costumes: put on or take off a hat, glasses, mask or cape, or "dress as a wizard" -----
+    if (!moveDone && WEARCMD.test(l)) {
+      const off = /\b(take(s)? off|remove(s)?|put(s)? away)\b/.test(l);
+      const colW = Object.keys(COLORS).find(w => new RegExp("\\b" + w + "\\b").test(l));
+      const col = colW ? COLORS[colW] : undefined;
+      const sets: { slot: GearSlot; item?: string; color?: string }[] = [];
+      const pre = l.match(/\b(wizard|king|queen|superhero|hero|detective|doctor|cowboy|pirate|cool)\b/)?.[1];
+      if (!off && /\b(dress(es)? (up )?as|become(s)?|turn(s)? into)\b/.test(l) && pre && COSTUMES[pre]) sets.push(...COSTUMES[pre]);
+      else for (const [re, slot, item, dc] of GEAR_WORDS) if (re.test(l) && !sets.some(s2 => s2.slot === slot)) sets.push({ slot, item: off ? undefined : item, color: off ? undefined : col ?? dc });
+      if (off && /\b(everything|all|costume|outfit)\b/.test(l)) for (const sl of ["hat", "glasses", "mask", "cape"] as GearSlot[]) sets.push({ slot: sl });
+      if (sets.length) {
+        for (const g of sets) me.actions.push({ t0: t, t1: t + 0.6, gear: g });
+        t += 0.8; moveDone = true;
       }
     }
 
