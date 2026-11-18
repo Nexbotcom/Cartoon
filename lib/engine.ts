@@ -558,6 +558,71 @@ export function drawScreenText(c: CanvasRenderingContext2D, s: Scene, t: number)
   }
 }
 
+
+
+// ---------- costumes ----------
+export type GearNow = Partial<Record<"hat" | "glasses" | "mask" | "cape", { item: string; color: string; u: number }>>;
+export function gearAt(a: { actions: Action[] }, t: number): GearNow {
+  const out: GearNow = {};
+  for (const q of a.actions) {
+    if (!q.gear || q.t0 > t) continue;
+    const g = q.gear;
+    if (!g.item) delete out[g.slot];
+    else out[g.slot] = { item: g.item, color: g.color ?? "#888888", u: cl((t - q.t0) / 0.5, 0, 1) };
+  }
+  return out;
+}
+const popK = (u: number) => Math.max(0.01, sm(cl(u, 0, 1)) * (1 + 0.2 * Math.sin(Math.PI * cl(u, 0, 1))));
+// 2D costume pieces. The head is estimated from the character's height (about 8.5% of it), so a piece may sit a few pixels off on an unusual build.
+function drawGear2D(c: CanvasRenderingContext2D, st: ReturnType<typeof actorState>, def: { height: number }, pose: Pose, fy: number, sc: number) {
+  const g = st.gear;
+  if (!g.hat && !g.glasses && !g.mask) return;
+  const H = def.height * sc, hr = H * 0.085;
+  c.save();
+  c.translate(st.x + (st.view === "side" ? st.face * hr * 0.12 : 0), fy - H + hr * 1.05 + pose.bob * sc);
+  c.rotate((pose.tilt * Math.PI) / 180); c.scale(hr / 25, hr / 25); c.lineJoin = "round";
+  if (g.mask) {
+    const m = g.mask; c.save(); c.scale(popK(m.u), popK(m.u)); c.fillStyle = m.color;
+    if (m.item === "surgical") { c.beginPath(); c.moveTo(-17, 2); c.quadraticCurveTo(0, 8, 17, 2); c.lineTo(15, 17); c.quadraticCurveTo(0, 22, -15, 17); c.closePath(); c.fill(); }
+    else if (m.item === "patch") { c.beginPath(); c.arc(-9, -2, 7, 0, 7); c.fill(); c.strokeStyle = m.color; c.lineWidth = 2; c.beginPath(); c.moveTo(-24, -12); c.lineTo(24, -8); c.stroke(); }
+    else {
+      c.beginPath(); c.moveTo(-23, -10); c.lineTo(23, -10); c.lineTo(20, 5); c.lineTo(8, 3); c.lineTo(-8, 3); c.lineTo(-20, 5); c.closePath(); c.fill();
+      c.fillStyle = "#ffffff"; c.beginPath(); c.ellipse(-10, -3, 5, 3.5, 0, 0, 7); c.ellipse(10, -3, 5, 3.5, 0, 0, 7); c.fill();
+    }
+    c.restore();
+  }
+  if (g.glasses) {
+    const m = g.glasses; c.save(); c.scale(popK(m.u), popK(m.u)); c.strokeStyle = m.color; c.fillStyle = m.color; c.lineWidth = 2.4;
+    if (m.item === "sun") { c.fillRect(-20, -9, 17, 12); c.fillRect(3, -9, 17, 12); c.fillRect(-3, -7, 6, 2.5); }
+    else { c.beginPath(); c.arc(-11, -2, 8, 0, 7); c.moveTo(19, -2); c.arc(11, -2, 8, 0, 7); c.moveTo(-3, -3); c.lineTo(3, -3); c.stroke(); }
+    c.restore();
+  }
+  if (g.hat) {
+    const m = g.hat; c.save(); c.translate(0, -25); c.scale(popK(m.u), popK(m.u)); c.translate(0, 25); c.fillStyle = m.color;
+    switch (m.item) {
+      case "tophat": c.fillRect(-17, -66, 34, 42); c.fillRect(-28, -26, 56, 6); c.fillStyle = "#c0392b"; c.fillRect(-17, -34, 34, 6); break;
+      case "crown": c.beginPath(); c.moveTo(-20, -24); c.lineTo(-20, -46); c.lineTo(-10, -34); c.lineTo(0, -50); c.lineTo(10, -34); c.lineTo(20, -46); c.lineTo(20, -24); c.closePath(); c.fill(); break;
+      case "wizard": c.beginPath(); c.moveTo(-24, -24); c.lineTo(8, -92); c.lineTo(24, -24); c.closePath(); c.fill(); c.beginPath(); c.ellipse(0, -24, 34, 7, 0, 0, 7); c.fill(); c.fillStyle = "#e8c33a"; c.fillRect(-22, -32, 44, 6); break;
+      case "cowboy": c.fillRect(-16, -48, 32, 26); c.beginPath(); c.ellipse(0, -24, 40, 8, 0, 0, 7); c.fill(); c.fillStyle = "#3a2412"; c.fillRect(-16, -32, 32, 5); break;
+      case "beanie": c.beginPath(); c.arc(0, -10, 27, Math.PI, 2 * Math.PI); c.closePath(); c.fill(); c.fillStyle = "#ffffff"; c.beginPath(); c.arc(0, -38, 6, 0, 7); c.fill(); break;
+      case "fedora": c.fillRect(-16, -46, 32, 22); c.beginPath(); c.ellipse(0, -24, 32, 6, 0, 0, 7); c.fill(); c.fillStyle = "#2b2b2b"; c.fillRect(-16, -32, 32, 5); break;
+      case "pirate": c.beginPath(); c.ellipse(0, -26, 34, 8, 0, 0, 7); c.fill(); c.beginPath(); c.arc(0, -26, 22, Math.PI, 2 * Math.PI); c.fill(); c.fillStyle = "#f4f4f4"; c.beginPath(); c.arc(0, -38, 4, 0, 7); c.fill(); break;
+      default: c.beginPath(); c.arc(0, -8, 26, Math.PI, 2 * Math.PI); c.closePath(); c.fill(); c.fillRect(-4, -11, 36, 5);
+    }
+    c.restore();
+  }
+  c.restore();
+}
+function drawCape2D(c: CanvasRenderingContext2D, st: ReturnType<typeof actorState>, def: { height: number }, fy: number, sc: number) {
+  const cp = st.gear.cape;
+  if (!cp) return;
+  const H = def.height * sc, top = fy - H * 0.8, bot = fy - H * 0.2, w = H * (st.view === "side" ? 0.12 : 0.22);
+  const fl = st.moving ? H * 0.16 : H * 0.03, dir = -st.face * (st.view === "side" ? 1 : 0.5);
+  c.save(); c.globalAlpha = Math.min(1, cp.u * 2); c.fillStyle = cp.color;
+  c.beginPath(); c.moveTo(st.x - w * 0.55, top); c.lineTo(st.x + w * 0.55, top); c.lineTo(st.x + w * 0.8 + dir * fl, bot); c.lineTo(st.x - w * 0.8 + dir * fl, bot); c.closePath(); c.fill();
+  c.restore();
+}
+
 export function camAt(s: Scene, t: number) {
   const k = s.cam; let i = 0;
   while (i < k.length - 1 && k[i + 1].t <= t) i++;
