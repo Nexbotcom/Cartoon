@@ -34,6 +34,7 @@ export interface Pose {
 
 export interface Action {
   t0: number; t1: number;
+  gear?: { slot: "hat" | "glasses" | "mask" | "cape"; item?: string; color?: string };   // put on (item) or take off (no item) a costume piece
   fall?: "down" | "up"; fallDir?: number;   // falling over (forward = 1, backward = -1) and getting up
   think?: string; mark?: string; voice?: "whisper" | "shout";   // a thought bubble, a ! or ? popup, quiet or loud speech
   gesture?: "clap" | "dance" | "hug" | "five" | "knock" | "unlock";   // hug and high five (with a partner), clap and dance (alone)
