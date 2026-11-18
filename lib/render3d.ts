@@ -560,8 +560,91 @@ export function createRenderer3D(): Renderer3D {
     if (m.bun) m.bun.position.y = 0.16 - m.c;
   };
 
-  // ---------- posing ----------
 
+    // ---------- costumes: hats, glasses, masks and capes, put on and taken off by the script ----------
+  interface GearState { sig: string; headG: THREE.Group; cape: THREE.Group | null; px: number; pz: number; a: number; av: number; b: number; bv: number }
+  const gearMem = new WeakMap<Rig, GearState>();
+  const popEase = (u: number) => Math.max(0.01, (u < 1 ? u * u * (3 - 2 * u) : 1) * (1 + 0.2 * Math.sin(Math.PI * Math.min(1, u))));
+  const buildHat = (item: string, col: string) => {
+    const g = new THREE.Group(), m = toon(col);
+    switch (item) {
+      case "tophat": cyl(g, 0.082, 0.082, 0.16, col, 0, 0.205, 0); cyl(g, 0.13, 0.13, 0.01, col, 0, 0.125, 0); cyl(g, 0.084, 0.084, 0.025, "#c0392b", 0, 0.15, 0); break;
+      case "crown": {
+        cyl(g, 0.1, 0.1, 0.05, col, 0, 0.15, 0);
+        for (let i = 0; i < 5; i++) { const a = (i / 5) * TAU; mesh(g, new THREE.ConeGeometry(0.022, 0.06, 6), m, Math.sin(a) * 0.09, 0.2, Math.cos(a) * 0.09); }
+        break;
+      }
+      case "wizard": mesh(g, new THREE.ConeGeometry(0.12, 0.34, 16), m, 0, 0.3, 0); cyl(g, 0.17, 0.17, 0.01, col, 0, 0.13, 0); cyl(g, 0.122, 0.122, 0.02, "#e8c33a", 0, 0.15, 0); break;
+      case "cowboy": cyl(g, 0.075, 0.085, 0.09, col, 0, 0.18, 0); cyl(g, 0.21, 0.21, 0.012, col, 0, 0.128, 0); cyl(g, 0.086, 0.086, 0.015, "#3a2412", 0, 0.15, 0); break;
+      case "beanie": { const d = mesh(g, new THREE.SphereGeometry(0.126, 20, 12, 0, TAU, 0, Math.PI * 0.55), m, 0, 0.03, -0.004); d.scale.set(0.93, 1.05, 1.02); sph(g, 0.03, "#ffffff", 0, 0.172, 0); break; }
+      case "fedora": cyl(g, 0.082, 0.085, 0.085, col, 0, 0.18, 0); cyl(g, 0.15, 0.15, 0.01, col, 0, 0.128, 0); cyl(g, 0.086, 0.086, 0.02, "#2b2b2b", 0, 0.15, 0); break;
+      case "pirate": {
+        cyl(g, 0.165, 0.165, 0.012, col, 0, 0.13, 0);
+        const d = mesh(g, new THREE.SphereGeometry(0.11, 16, 10, 0, TAU, 0, Math.PI / 2), m, 0, 0.13, 0); d.scale.set(1.1, 0.8, 1);
+        sph(g, 0.022, "#f4f4f4", 0, 0.17, 0.11, 1, 1, 0.5);
+        break;
+      }
+      default: { const d = mesh(g, new THREE.SphereGeometry(0.126, 20, 12, 0, TAU, 0, Math.PI * 0.52), m, 0, 0.03, -0.004); d.scale.set(0.93, 1, 1.02); bx(g, 0.13, 0.008, 0.09, col, 0, 0.06, 0.125); }
+    }
+    return g;
+  };
+  const buildFaceGear = (slot: string, item: string, col: string) => {
+    const g = new THREE.Group();
+    if (slot === "glasses") {
+      for (const s of [-1, 1]) {
+        if (item === "sun") bx(g, 0.07, 0.045, 0.012, col, s * 0.043, 0.018, 0.113);
+        else mesh(g, new THREE.TorusGeometry(0.03, 0.004, 8, 18), toon(col), s * 0.043, 0.018, 0.112);
+        bx(g, 0.004, 0.004, 0.1, col, s * 0.093, 0.025, 0.06);
+      }
+      bx(g, 0.02, 0.005, 0.005, col, 0, 0.025, 0.113);
+    } else if (item === "surgical") {
+      bx(g, 0.15, 0.07, 0.03, col, 0, -0.045, 0.1); bx(g, 0.004, 0.02, 0.1, "#9bc4d8", -0.1, -0.02, 0.05); bx(g, 0.004, 0.02, 0.1, "#9bc4d8", 0.1, -0.02, 0.05);
+    } else if (item === "patch") {
+      mesh(g, new THREE.CircleGeometry(0.03, 14), toon(col), 0.043, 0.018, 0.116); bx(g, 0.22, 0.006, 0.006, col, 0, 0.04, 0.1);
+    } else {
+      bx(g, 0.2, 0.052, 0.03, col, 0, 0.018, 0.097);
+      for (const s of [-1, 1]) sph(g, 0.016, "#f4f4f4", s * 0.043, 0.02, 0.114, 1, 0.8, 0.4);
+    }
+    return g;
+  };
+  const buildCape = (col: string) => {
+    const g = new THREE.Group(); g.position.set(0, 0.5, -0.12);
+    const geo = new THREE.BoxGeometry(0.46, 0.92, 0.022); geo.translate(0, -0.46, 0);
+    const body = mesh(g, geo, toon(col), 0, 0, 0); body.castShadow = true;
+    bx(g, 0.5, 0.04, 0.05, "#e8c33a", 0, 0, 0.0);
+    return g;
+  };
+  const applyGear = (rig: Rig, st: ReturnType<typeof actorState>, dt: number) => {
+    const gr = st.gear;
+    const sig = (["hat", "glasses", "mask", "cape"] as const).map(sl => (gr[sl] ? sl + ":" + gr[sl]!.item + ":" + gr[sl]!.color : "")).join("|");
+    let m = gearMem.get(rig);
+    if (!m) { m = { sig: "", headG: new THREE.Group(), cape: null, px: rig.root.position.x, pz: rig.root.position.z, a: 0, av: 0, b: 0, bv: 0 }; gearMem.set(rig, m); }
+    if (m.sig !== sig) {
+      const head = rig.neck.children.find(ch => ch.type === "Group");
+      if (head) {
+        head.remove(m.headG); k.dispose(m.headG); m.headG = new THREE.Group(); head.add(m.headG);
+        if (gr.hat) { const h = buildHat(gr.hat.item, gr.hat.color); h.name = "hat"; m.headG.add(h); }
+        if (gr.glasses) { const h = buildFaceGear("glasses", gr.glasses.item, gr.glasses.color); h.name = "glasses"; m.headG.add(h); }
+        if (gr.mask) { const h = buildFaceGear("mask", gr.mask.item, gr.mask.color); h.name = "mask"; m.headG.add(h); }
+      }
+      if (m.cape) { rig.torso.remove(m.cape); k.dispose(m.cape); m.cape = null; }
+      if (gr.cape) { m.cape = buildCape(gr.cape.color); rig.torso.add(m.cape); }
+      m.sig = sig;
+    }
+    for (const ch of m.headG.children) { const s2 = gr[ch.name as "hat" | "glasses" | "mask"]; if (s2) ch.scale.setScalar(popEase(s2.u)); }
+    if (m.cape && gr.cape) {                                  // the cape trails behind and swings like cloth
+      const d = cl(dt, 0.001, 0.05), yaw = rig.root.rotation.y;
+      const vx = (rig.root.position.x - m.px) / d, vz = (rig.root.position.z - m.pz) / d;
+      const vf = cl(vx * Math.sin(yaw) + vz * Math.cos(yaw), -3, 3), vl = cl(vx * Math.cos(yaw) - vz * Math.sin(yaw), -3, 3);
+      m.px = rig.root.position.x; m.pz = rig.root.position.z;
+      m.av += (-(m.a - cl(vf * 0.22, -0.5, 0.7)) * 70 - m.av * 8) * d; m.a += m.av * d;
+      m.bv += (-(m.b - cl(-vl * 0.15, -0.4, 0.4)) * 70 - m.bv * 8) * d; m.b += m.bv * d;
+      m.cape.rotation.set(0.08 + m.a * (1 + 0.3 * Math.sin(lastT * 9) * Math.min(1, Math.abs(vf))), 0, m.b);
+      m.cape.scale.setScalar(popEase(gr.cape.u));
+    }
+  };
+
+  
   // ---------- posing ----------
   const poseRig = (rig: Rig, st: ReturnType<typeof actorState>, jump: boolean, dt: number) => {
     const p = st.pose, clip = st.clip, side = st.walking || st.view === "side";
@@ -711,6 +794,7 @@ export function createRenderer3D(): Renderer3D {
     });
     rig.laptop.visible = clip === "type";
     follow(rig, st, dt);
+    applyGear(rig, st, dt);
     faceFx(rig, fw);
   };
 
